@@ -4,6 +4,7 @@ const config=window.BAUMANAGER_CONFIG||window.BAUAUFMASS_CONFIG||{};
 const GRAPH="https://graph.microsoft.com/v1.0";
 const INDEX_FILE_NAME="project_index.json";
 const CONFIGURED_BASE_FOLDER=config.baseFolder||"";
+const PRIMARY_CLOUD_PATH=["BauManager","BauManagerCloud"];
 const state={account:null,user:null,projects:[],selectedProject:null,selectedPosition:null,category:null,files:[],previousView:"dashboardView",cloudBaseFolder:"",projectIndexItemId:""};
 const $=id=>document.getElementById(id);
 const views=["setupView","loginView","dashboardView","positionView","positionDetailView","accountView"];
@@ -75,20 +76,76 @@ async function fetchIndexByItemId(itemId){
   return null;
  }
 }
+async function listFolderChildren(parentId){
+ let url=parentId
+  ? `${GRAPH}/me/drive/items/${encodeURIComponent(parentId)}/children?$select=id,name,file,folder,parentReference,lastModifiedDateTime,size&$top=200`
+  : `${GRAPH}/me/drive/root/children?$select=id,name,file,folder,parentReference,lastModifiedDateTime,size&$top=200`;
+ const items=[];
+ while(url){
+  const response=await graphFetch(url);
+  const page=await response.json();
+  items.push(...(page.value||[]));
+  url=page["@odata.nextLink"]||"";
+ }
+ return items;
+}
+
+async function findChildByName(parentId,name,wantFolder=null){
+ const items=await listFolderChildren(parentId);
+ const target=String(name||"").toLowerCase();
+ return items.find(item=>{
+  if(String(item.name||"").toLowerCase()!==target)return false;
+  if(wantFolder===true)return Boolean(item.folder);
+  if(wantFolder===false)return Boolean(item.file);
+  return true;
+ })||null;
+}
+
+async function fetchIndexFromFolderParts(parts){
+ let parentId=null;
+ for(const part of parts){
+  const folder=await findChildByName(parentId,part,true);
+  if(!folder)return null;
+  parentId=folder.id;
+ }
+
+ const indexItem=await findChildByName(parentId,INDEX_FILE_NAME,false);
+ if(!indexItem)return null;
+
+ const data=await(
+  await graphFetch(
+   `${GRAPH}/me/drive/items/${encodeURIComponent(indexItem.id)}/content`
+  )
+ ).json();
+
+ saveCloudLocation(indexItem);
+ return data;
+}
+
 async function fetchIndexByConfiguredPath(){
  if(!CONFIGURED_BASE_FOLDER)return null;
- const path=`${CONFIGURED_BASE_FOLDER}/${INDEX_FILE_NAME}`;
+ const parts=normaliseDriveFolder(CONFIGURED_BASE_FOLDER)
+  .split("/")
+  .filter(Boolean);
+ if(!parts.length)return null;
+
  try{
-  const metadata=await(await graphFetch(`${graphPath(path)}?$select=id,name,parentReference,lastModifiedDateTime`)).json();
-  const data=await(await graphFetch(`${GRAPH}/me/drive/items/${encodeURIComponent(metadata.id)}/content`)).json();
-  saveCloudLocation(metadata);
-  return data;
+  return await fetchIndexFromFolderParts(parts);
  }catch{
   return null;
  }
 }
+
+async function fetchIndexByPrimaryPath(){
+ try{
+  return await fetchIndexFromFolderParts(PRIMARY_CLOUD_PATH);
+ }catch{
+  return null;
+ }
+}
+
 async function searchProjectIndexItems(){
- let url=`${GRAPH}/me/drive/root/search(q='${encodeURIComponent(INDEX_FILE_NAME)}')?$select=id,name,parentReference,lastModifiedDateTime,size&$top=200`;
+ let url=`${GRAPH}/me/drive/root/search(q='${encodeURIComponent(INDEX_FILE_NAME)}')?$select=id,name,file,folder,parentReference,lastModifiedDateTime,size&$top=200`;
  const matches=[];
  while(url){
   const response=await graphFetch(url);
@@ -102,6 +159,7 @@ async function searchProjectIndexItems(){
  }
  return matches;
 }
+
 function scoreIndexItem(item){
  const folder=folderFromParentReference(item.parentReference).toLowerCase();
  let score=0;
@@ -118,21 +176,33 @@ async function findProjectIndex(){
  const cached=await fetchIndexByItemId(state.projectIndexItemId);
  if(cached)return cached;
 
+ // Primary test structure selected by the user:
+ // OneDrive/BauManager/BauManagerCloud/project_index.json
+ const primary=await fetchIndexByPrimaryPath();
+ if(primary)return primary;
+
+ // Configurable path from config.js.
  const configured=await fetchIndexByConfiguredPath();
  if(configured)return configured;
 
+ // Final fallback for future moved/renamed folders.
  const matches=await searchProjectIndexItems();
  if(!matches.length){
   throw new Error(
-   "project_index.json wurde im angemeldeten OneDrive nicht gefunden. "+
-   "Bitte Mobile_Daten_einmal_synchronisieren.bat auf dem Büro-PC starten "+
-   "und warten, bis OneDrive die Datei synchronisiert hat."
+   "project_index.json wurde nicht gefunden. Geprüft wurden zuerst "+
+   "BauManager/BauManagerCloud, danach der konfigurierte Cloudpfad "+
+   "und zuletzt die OneDrive-Suche. Bitte kontrolliere, dass die App "+
+   "mit demselben privaten Microsoft-Konto wie OneDrive angemeldet ist."
   );
  }
 
  matches.sort((a,b)=>scoreIndexItem(b)-scoreIndexItem(a));
  const selected=matches[0];
- const data=await(await graphFetch(`${GRAPH}/me/drive/items/${encodeURIComponent(selected.id)}/content`)).json();
+ const data=await(
+  await graphFetch(
+   `${GRAPH}/me/drive/items/${encodeURIComponent(selected.id)}/content`
+  )
+ ).json();
  saveCloudLocation(selected);
  return data;
 }
@@ -148,13 +218,13 @@ async function enterApp(){
 }
 async function loadProjects(){
  showView("dashboardView");
- $("projectList").innerHTML='<div class="panel">OneDrive wird nach den BauManager-Projektdaten durchsucht …</div>';
+ $("projectList").innerHTML='<div class="panel">BauManagerCloud wird direkt in OneDrive geöffnet …</div>';
  try{
   const data=await findProjectIndex();
   state.projects=data.projects||[];
   renderProjects(state.projects);
  }catch(e){
-  $("projectList").innerHTML=`<div class="panel"><h2>Keine Projektdaten gefunden</h2><p>Die App hat das gesamte angemeldete OneDrive automatisch nach <strong>project_index.json</strong> durchsucht.</p><p>Starte auf dem Büro-PC <strong>Mobile_Daten_einmal_synchronisieren.bat</strong> und warte auf den grünen OneDrive-Haken.</p><p class="status error">${escapeHtml(e.message)}</p></div>`;
+  $("projectList").innerHTML=`<div class="panel"><h2>Keine Projektdaten gefunden</h2><p>Die App hat zuerst den Ordner <strong>BauManager/BauManagerCloud</strong> direkt geöffnet und anschließend die Ausweichsuche ausgeführt.</p><p>Starte auf dem Büro-PC <strong>Mobile_Daten_einmal_synchronisieren.bat</strong> und warte auf den grünen OneDrive-Haken.</p><p class="status error">${escapeHtml(e.message)}</p></div>`;
  }
 }
 function renderProjects(projects){
@@ -216,7 +286,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v1.2"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v1.3"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
