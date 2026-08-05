@@ -5,6 +5,7 @@ const GRAPH="https://graph.microsoft.com/v1.0";
 const INDEX_FILE_NAME="project_index.json";
 const CONFIGURED_BASE_FOLDER=config.baseFolder||"";
 const PRIMARY_CLOUD_PATH=["BauManager","BauManagerCloud"];
+const CLOUD_DIAGNOSTICS=[];
 const state={account:null,user:null,projects:[],selectedProject:null,selectedPosition:null,category:null,files:[],previousView:"dashboardView",cloudBaseFolder:"",projectIndexItemId:""};
 const $=id=>document.getElementById(id);
 const views=["setupView","loginView","dashboardView","positionView","positionDetailView","accountView"];
@@ -29,6 +30,55 @@ function logout(){msalInstance.logoutRedirect({account:state.account,postLogoutR
 async function getToken(){const req={scopes:config.graphScopes,account:state.account};try{return(await msalInstance.acquireTokenSilent(req)).accessToken}catch{await msalInstance.acquireTokenRedirect(req);throw new Error("Anmeldung wird erneuert.")}}
 async function graphFetch(url,options={}){const token=await getToken();const response=await fetch(url,{...options,headers:{Authorization:`Bearer ${token}`,...(options.headers||{})}});if(!response.ok){const body=await response.text();throw new Error(`${response.status}: ${body||response.statusText}`)}return response}
 function graphPath(path){const safe=path.split("/").filter(Boolean).map(encodeURIComponent).join("/");return `${GRAPH}/me/drive/root:/${safe}`}
+
+function addCloudDiagnostic(step,ok,detail=""){
+ CLOUD_DIAGNOSTICS.push({
+  step,
+  ok:Boolean(ok),
+  detail:String(detail||"")
+ });
+}
+function resetCloudDiagnostics(){
+ CLOUD_DIAGNOSTICS.length=0;
+}
+function cloudDiagnosticText(){
+ return CLOUD_DIAGNOSTICS.map(entry=>
+  `${entry.ok?"✓":"✗"} ${entry.step}${entry.detail?`\n   ${entry.detail}`:""}`
+ ).join("\n");
+}
+async function graphJsonDiagnostic(step,url,options={}){
+ try{
+  const response=await graphFetch(url,options);
+  const data=await response.json();
+  addCloudDiagnostic(step,true,url);
+  return data;
+ }catch(error){
+  addCloudDiagnostic(step,false,`${url}\n${error.message}`);
+  throw error;
+ }
+}
+async function fetchIndexByAbsolutePath(){
+ const relative="BauManager/BauManagerCloud/project_index.json";
+ const url=`${graphPath(relative)}:/content`;
+ try{
+  const response=await graphFetch(url);
+  const data=await response.json();
+  state.cloudBaseFolder="BauManager/BauManagerCloud";
+  addCloudDiagnostic(
+   "Direkter Dateizugriff",
+   true,
+   relative
+  );
+  return data;
+ }catch(error){
+  addCloudDiagnostic(
+   "Direkter Dateizugriff",
+   false,
+   `${relative}\n${error.message}`
+  );
+  return null;
+ }
+}
 
 function accountCacheKey(){
  const accountId=state.account?.homeAccountId||state.account?.username||"default";
@@ -87,18 +137,29 @@ async function listFolderChildren(parentId){
   items.push(...(page.value||[]));
   url=page["@odata.nextLink"]||"";
  }
+ addCloudDiagnostic(
+  parentId?"Ordnerinhalt gelesen":"OneDrive-Stammordner gelesen",
+  true,
+  items.map(item=>item.name).join(", ")||"(leer)"
+ );
  return items;
 }
 
 async function findChildByName(parentId,name,wantFolder=null){
  const items=await listFolderChildren(parentId);
  const target=String(name||"").toLowerCase();
- return items.find(item=>{
+ const found=items.find(item=>{
   if(String(item.name||"").toLowerCase()!==target)return false;
   if(wantFolder===true)return Boolean(item.folder);
   if(wantFolder===false)return Boolean(item.file);
   return true;
  })||null;
+ addCloudDiagnostic(
+  `Element „${name}“`,
+  Boolean(found),
+  found?`ID: ${found.id}`:`Vorhanden: ${items.map(item=>item.name).join(", ")||"(keine)"}`
+ );
+ return found;
 }
 
 async function fetchIndexFromFolderParts(parts){
@@ -171,40 +232,77 @@ function scoreIndexItem(item){
  return score;
 }
 async function findProjectIndex(){
- loadCachedCloudLocation();
+ resetCloudDiagnostics();
 
- const cached=await fetchIndexByItemId(state.projectIndexItemId);
- if(cached)return cached;
-
- // Primary test structure selected by the user:
- // OneDrive/BauManager/BauManagerCloud/project_index.json
- const primary=await fetchIndexByPrimaryPath();
- if(primary)return primary;
-
- // Configurable path from config.js.
- const configured=await fetchIndexByConfiguredPath();
- if(configured)return configured;
-
- // Final fallback for future moved/renamed folders.
- const matches=await searchProjectIndexItems();
- if(!matches.length){
+ try{
+  const drive=await graphJsonDiagnostic(
+   "OneDrive erreichbar",
+   `${GRAPH}/me/drive?$select=id,driveType,owner,quota`
+  );
+  addCloudDiagnostic(
+   "OneDrive-Typ",
+   true,
+   `${drive.driveType||"unbekannt"} · ${drive.owner?.user?.displayName||""}`
+  );
+ }catch(error){
   throw new Error(
-   "project_index.json wurde nicht gefunden. Geprüft wurden zuerst "+
-   "BauManager/BauManagerCloud, danach der konfigurierte Cloudpfad "+
-   "und zuletzt die OneDrive-Suche. Bitte kontrolliere, dass die App "+
-   "mit demselben privaten Microsoft-Konto wie OneDrive angemeldet ist."
+   "Das OneDrive des angemeldeten Kontos ist nicht erreichbar.\n\n"+
+   cloudDiagnosticText()
   );
  }
 
- matches.sort((a,b)=>scoreIndexItem(b)-scoreIndexItem(a));
- const selected=matches[0];
- const data=await(
-  await graphFetch(
-   `${GRAPH}/me/drive/items/${encodeURIComponent(selected.id)}/content`
-  )
- ).json();
- saveCloudLocation(selected);
- return data;
+ // Most reliable method: direct path content endpoint.
+ const absolute=await fetchIndexByAbsolutePath();
+ if(absolute)return absolute;
+
+ loadCachedCloudLocation();
+ const cached=await fetchIndexByItemId(state.projectIndexItemId);
+ if(cached){
+  addCloudDiagnostic("Gespeicherte Datei-ID",true,state.projectIndexItemId);
+  return cached;
+ }
+ addCloudDiagnostic("Gespeicherte Datei-ID",false,state.projectIndexItemId||"(keine)");
+
+ const primary=await fetchIndexByPrimaryPath();
+ if(primary){
+  addCloudDiagnostic("Direkte Ordnernavigation",true,PRIMARY_CLOUD_PATH.join("/"));
+  return primary;
+ }
+ addCloudDiagnostic("Direkte Ordnernavigation",false,PRIMARY_CLOUD_PATH.join("/"));
+
+ const configured=await fetchIndexByConfiguredPath();
+ if(configured){
+  addCloudDiagnostic("Konfigurierter Pfad",true,CONFIGURED_BASE_FOLDER);
+  return configured;
+ }
+ addCloudDiagnostic("Konfigurierter Pfad",false,CONFIGURED_BASE_FOLDER||"(leer)");
+
+ try{
+  const matches=await searchProjectIndexItems();
+  addCloudDiagnostic(
+   "OneDrive-Suche",
+   matches.length>0,
+   `${matches.length} Treffer`
+  );
+  if(matches.length){
+   matches.sort((a,b)=>scoreIndexItem(b)-scoreIndexItem(a));
+   const selected=matches[0];
+   const data=await(
+    await graphFetch(
+     `${GRAPH}/me/drive/items/${encodeURIComponent(selected.id)}/content`
+    )
+   ).json();
+   saveCloudLocation(selected);
+   return data;
+  }
+ }catch(error){
+  addCloudDiagnostic("OneDrive-Suche",false,error.message);
+ }
+
+ throw new Error(
+  "project_index.json konnte nicht geladen werden.\n\n"+
+  cloudDiagnosticText()
+ );
 }
 
 async function enterApp(){
@@ -286,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v1.3"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v1.4"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
