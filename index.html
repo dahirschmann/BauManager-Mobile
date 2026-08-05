@@ -96,7 +96,8 @@
       </div>
 
       <div class="action-grid">
-        <button class="action-card featured" data-category="aufmass">
+        <button id="digitalMeasurementButton" class="action-card featured digital-feature"><span class="action-icon">✎</span><strong>Digitales Aufmaß</strong><small>Mit Stift direkt ausfüllen</small></button>
+        <button class="action-card" data-category="aufmass">
           <span class="action-icon">▤</span>
           <strong>Aufmaß</strong>
           <small>Fotografieren oder PDF wählen</small>
@@ -159,6 +160,24 @@
         <button id="uploadButton" class="primary large" disabled>In OneDrive hochladen</button>
         <div id="uploadProgress" class="status"></div>
       </section>
+    </section>
+
+
+    <section id="digitalMeasurementView" class="hidden digital-editor-view">
+      <button id="backFromDigital" class="back-button">← Position</button>
+      <div class="digital-toolbar panel">
+        <div><span class="eyebrow">Digitales Aufmaß</span><h1 id="digitalId"></h1></div>
+        <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
+        <div class="tool-row"><button id="digitalPen" class="outline">✎ Stift</button><button id="digitalEraser" class="outline">⌫ Radierer</button><button id="digitalUndo" class="outline">↶</button><button id="digitalRedo" class="outline">↷</button><button id="digitalClear" class="outline">Leeren</button></div>
+      </div>
+      <div class="measurement-paper">
+        <div class="paper-title">Aufmaßblatt</div>
+        <div class="paper-meta"><div><b>Projekt</b><span id="digitalProject"></span></div><div><b>Position</b><span id="digitalPosition"></span></div><div><b>Einheit</b><span id="digitalUnit"></span></div></div>
+        <div class="paper-heading">Aufmaß / Skizze / Berechnung</div>
+        <canvas id="drawingCanvas"></canvas>
+      </div>
+      <div class="digital-actions"><button id="digitalLocalSave" class="outline large">Entwurf speichern</button><button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button></div>
+      <div id="digitalStatus" class="status"></div>
     </section>
 
     <section id="accountView" class="hidden">

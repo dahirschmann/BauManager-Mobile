@@ -1,4 +1,4 @@
-const CACHE = "baumanager-mobile-v1-4";
+const CACHE = "baumanager-mobile-v2-0";
 const SHELL = [
   "./",
   "index.html",

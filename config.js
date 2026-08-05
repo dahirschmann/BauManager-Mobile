@@ -9,7 +9,7 @@ window.BAUMANAGER_CONFIG = {
   // Authentication -> Single-page application -> Redirect URIs.
   redirectUri: window.location.origin + window.location.pathname,
 
-  baseFolder: "BauAufmass/Mobile",
+  baseFolder: "BauManager/BauManagerCloud",
   graphScopes: ["User.Read", "Files.ReadWrite"]
 };
 
