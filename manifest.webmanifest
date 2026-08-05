@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "Mobile Baustellenerfassung für BauAufmaß und weitere BauManager-Module.",
+  "description": "BauManager Mobile v1.2 mit automatischer OneDrive-Suche nach der Projektdatei.",
   "icons": [
     {
       "src": "icon.svg",
