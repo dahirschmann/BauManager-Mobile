@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.0 mit digitalem Aufmaßblatt und Stifteingabe.",
+  "description": "BauManager Mobile v2.1 mit echtem digitalen Aufmaßeditor, Stiftbedienung, Entwurfsspeicherung und PDF-Übertragung.",
   "icons": [
     {
       "src": "icon.svg",

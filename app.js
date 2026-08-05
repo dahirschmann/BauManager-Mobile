@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.0"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.1"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -415,30 +415,193 @@ function humanSize(b){if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).to
 function escapeHtml(v){const d=document.createElement("div");d.textContent=String(v||"");return d.innerHTML}
 
 // Digitales Aufmaß – Grundgerüst
-const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",lineWidth:2.4};
-function digitalDraftKey(){return `digital-measurement:${currentExternalId()}`;}
-function resizeDrawingCanvas(){const c=$("drawingCanvas"); if(!c)return; const r=c.getBoundingClientRect(),dpr=window.devicePixelRatio||1; const old=document.createElement("canvas"); old.width=c.width;old.height=c.height;old.getContext("2d").drawImage(c,0,0); c.width=Math.max(1,Math.round(r.width*dpr));c.height=Math.max(1,Math.round(r.height*dpr)); const x=c.getContext("2d");x.scale(dpr,dpr); redrawDigitalCanvas();}
-function canvasPoint(e){const r=$("drawingCanvas").getBoundingClientRect();return {x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure||0.5};}
-function redrawDigitalCanvas(){const c=$("drawingCanvas"),x=c.getContext("2d"),dpr=window.devicePixelRatio||1;x.setTransform(1,0,0,1,0,0);x.clearRect(0,0,c.width,c.height);x.scale(dpr,dpr);for(const s of digitalState.strokes){x.beginPath();x.lineCap="round";x.lineJoin="round";x.strokeStyle=s.tool==="eraser"?"#fff":"#17212b";x.lineWidth=s.tool==="eraser"?18:s.width; s.points.forEach((p,i)=>i?x.lineTo(p.x,p.y):x.moveTo(p.x,p.y));x.stroke();}}
-function bindDrawingCanvas(){const c=$("drawingCanvas");c.style.touchAction="none";c.onpointerdown=e=>{c.setPointerCapture(e.pointerId);digitalState.drawing=true;digitalState.current={tool:digitalState.tool,width:digitalState.lineWidth,points:[canvasPoint(e)]};digitalState.redo=[];};c.onpointermove=e=>{if(!digitalState.drawing)return;digitalState.current.points.push(canvasPoint(e));digitalState.strokes.push(digitalState.current);redrawDigitalCanvas();digitalState.strokes.pop();};c.onpointerup=e=>{if(!digitalState.drawing)return;digitalState.current.points.push(canvasPoint(e));digitalState.strokes.push(digitalState.current);digitalState.current=null;digitalState.drawing=false;redrawDigitalCanvas();autoSaveDigitalDraft();};}
-function renderDigitalSheetNumbers(){const s=$("digitalSheetNumber");s.innerHTML="";const sheets=state.selectedPosition.measurement_sheets||[];const next=Math.max(0,...sheets.map(v=>Number(v.sheet_no)||0))+1;for(const sh of sheets){const o=document.createElement("option");o.value=sh.sheet_no;o.textContent=`Blatt ${String(sh.sheet_no).padStart(3,"0")} – ${sh.status||"gedruckt"}`;s.appendChild(o);}const n=document.createElement("option");n.value=next;n.textContent=`Neues Blatt ${String(next).padStart(3,"0")}`;s.appendChild(n);}
+const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",lineWidth:2.4,background:"#ffffff",bound:false};
+function digitalDraftKey(){return `digital-measurement:${digitalExternalId()}`;}
+function setDigitalTool(tool){
+ digitalState.tool=tool;
+ $("digitalPen").classList.toggle("active-tool",tool==="pen");
+ $("digitalEraser").classList.toggle("active-tool",tool==="eraser");
+}
+function updateDigitalWidth(){
+ const value=Number($("digitalLineWidth")?.value||2.4);
+ digitalState.lineWidth=Math.max(1,Math.min(10,value));
+ if($("digitalLineWidthValue"))$("digitalLineWidthValue").textContent=`${digitalState.lineWidth.toFixed(1)} mm`;
+}
+function resizeDrawingCanvas(){
+ const canvas=$("drawingCanvas");
+ if(!canvas)return;
+ const rect=canvas.getBoundingClientRect();
+ const dpr=Math.max(1,window.devicePixelRatio||1);
+ const width=Math.max(1,Math.round(rect.width*dpr));
+ const height=Math.max(1,Math.round(rect.height*dpr));
+ if(canvas.width===width&&canvas.height===height){
+  redrawDigitalCanvas();
+  return;
+ }
+ canvas.width=width;
+ canvas.height=height;
+ redrawDigitalCanvas();
+}
+function canvasPoint(event){
+ const rect=$("drawingCanvas").getBoundingClientRect();
+ return {
+  x:event.clientX-rect.left,
+  y:event.clientY-rect.top,
+  p:event.pointerType==="pen"&&event.pressure>0?event.pressure:0.5
+ };
+}
+function drawStroke(context,stroke){
+ if(!stroke?.points?.length)return;
+ context.save();
+ context.beginPath();
+ context.lineCap="round";
+ context.lineJoin="round";
+ context.globalCompositeOperation=stroke.tool==="eraser"?"destination-out":"source-over";
+ context.strokeStyle="#17212b";
+ context.lineWidth=stroke.tool==="eraser"
+  ? Math.max(18,stroke.width*6)
+  : Math.max(1,stroke.width*(0.65+(stroke.points[0]?.p||0.5)*0.7));
+ stroke.points.forEach((point,index)=>{
+  if(index===0)context.moveTo(point.x,point.y);
+  else context.lineTo(point.x,point.y);
+ });
+ context.stroke();
+ context.restore();
+}
+function redrawDigitalCanvas(){
+ const canvas=$("drawingCanvas");
+ if(!canvas)return;
+ const context=canvas.getContext("2d");
+ const dpr=Math.max(1,window.devicePixelRatio||1);
+ context.setTransform(1,0,0,1,0,0);
+ context.clearRect(0,0,canvas.width,canvas.height);
+ context.fillStyle=digitalState.background;
+ context.fillRect(0,0,canvas.width,canvas.height);
+ context.scale(dpr,dpr);
+ for(const stroke of digitalState.strokes)drawStroke(context,stroke);
+ if(digitalState.current)drawStroke(context,digitalState.current);
+}
+function finishDigitalStroke(event){
+ if(!digitalState.drawing)return;
+ if(event)digitalState.current.points.push(canvasPoint(event));
+ if(digitalState.current?.points?.length){
+  digitalState.strokes.push(digitalState.current);
+ }
+ digitalState.current=null;
+ digitalState.drawing=false;
+ redrawDigitalCanvas();
+ autoSaveDigitalDraft();
+}
+function bindDrawingCanvas(){
+ const canvas=$("drawingCanvas");
+ if(!canvas||digitalState.bound)return;
+ digitalState.bound=true;
+ canvas.style.touchAction="none";
+ canvas.addEventListener("pointerdown",event=>{
+  event.preventDefault();
+  canvas.setPointerCapture(event.pointerId);
+  digitalState.drawing=true;
+  digitalState.redo=[];
+  digitalState.current={
+   tool:digitalState.tool,
+   width:digitalState.lineWidth,
+   points:[canvasPoint(event)]
+  };
+  redrawDigitalCanvas();
+ });
+ canvas.addEventListener("pointermove",event=>{
+  if(!digitalState.drawing||!digitalState.current)return;
+  event.preventDefault();
+  const events=event.getCoalescedEvents?event.getCoalescedEvents():[event];
+  for(const item of events)digitalState.current.points.push(canvasPoint(item));
+  redrawDigitalCanvas();
+ });
+ canvas.addEventListener("pointerup",finishDigitalStroke);
+ canvas.addEventListener("pointercancel",finishDigitalStroke);
+ canvas.addEventListener("pointerleave",event=>{
+  if(event.pointerType==="mouse")finishDigitalStroke(event);
+ });
+}
+function renderDigitalSheetNumbers(){
+ const select=$("digitalSheetNumber");
+ select.innerHTML="";
+ const sheets=state.selectedPosition.measurement_sheets||[];
+ const used=new Set(sheets.map(value=>Number(value.sheet_no)||0));
+ const prefix=`digital-measurement:${state.selectedProject.project_number}-${compactOrdinal(state.selectedPosition.ordinal)}-`;
+ for(let index=0;index<localStorage.length;index++){
+  const key=localStorage.key(index)||"";
+  if(key.startsWith(prefix)){
+   const match=key.match(/-(\d{3})$/);
+   if(match)used.add(Number(match[1]));
+  }
+ }
+ for(const sheet of sheets){
+  const option=document.createElement("option");
+  option.value=sheet.sheet_no;
+  option.textContent=`Blatt ${String(sheet.sheet_no).padStart(3,"0")} – ${sheet.status||"gedruckt"}`;
+  select.appendChild(option);
+ }
+ let next=1;
+ while(used.has(next))next++;
+ const option=document.createElement("option");
+ option.value=next;
+ option.textContent=`Neues digitales Blatt ${String(next).padStart(3,"0")}`;
+ option.selected=true;
+ select.appendChild(option);
+}
 function digitalExternalId(){const n=Number($("digitalSheetNumber").value||0);return `${state.selectedProject.project_number}-${compactOrdinal(state.selectedPosition.ordinal)}-${String(n).padStart(3,"0")}`;}
-function openDigitalMeasurement(){renderDigitalSheetNumbers();$("digitalDate").value=new Date().toISOString().slice(0,10);$("digitalProject").textContent=`${state.selectedProject.project_number} – ${state.selectedProject.name}`;$("digitalPosition").textContent=`${state.selectedPosition.ordinal} – ${state.selectedPosition.short_text||""}`;$("digitalUnit").textContent=state.selectedPosition.unit||"";updateDigitalId();showView("digitalMeasurementView");setTimeout(()=>{resizeDrawingCanvas();bindDrawingCanvas();loadDigitalDraft();},50);}
+function openDigitalMeasurement(){
+ closeUploadPanel();
+ renderDigitalSheetNumbers();
+ $("digitalDate").value=new Date().toISOString().slice(0,10);
+ $("digitalProject").textContent=`${state.selectedProject.project_number} – ${state.selectedProject.name}`;
+ $("digitalPosition").textContent=`${state.selectedPosition.ordinal} – ${state.selectedPosition.short_text||""}`;
+ $("digitalUnit").textContent=state.selectedPosition.unit||"";
+ setDigitalTool("pen");
+ updateDigitalWidth();
+ showView("digitalMeasurementView");
+ updateDigitalId();
+ setTimeout(()=>{
+  resizeDrawingCanvas();
+  bindDrawingCanvas();
+  loadDigitalDraft();
+ },80);
+}
 function updateDigitalId(){$("digitalId").textContent=digitalExternalId();loadDigitalDraft();}
 function draftObject(){return {version:1,id:digitalExternalId(),date:$("digitalDate").value,project:state.selectedProject,position:state.selectedPosition,strokes:digitalState.strokes,updated_at:new Date().toISOString(),status:"Entwurf"};}
 function autoSaveDigitalDraft(){localStorage.setItem(digitalDraftKey(),JSON.stringify(draftObject()));$("digitalStatus").textContent="Entwurf lokal gespeichert";}
-function loadDigitalDraft(){try{const raw=localStorage.getItem(digitalDraftKey());digitalState.strokes=raw?JSON.parse(raw).strokes||[]:[];}catch{digitalState.strokes=[];}digitalState.redo=[];redrawDigitalCanvas();}
-async function digitalPreviewBlob(){const c=$("drawingCanvas");return await new Promise(r=>c.toBlob(r,"image/png"));}
+function loadDigitalDraft(){
+ try{
+  const raw=localStorage.getItem(digitalDraftKey());
+  const draft=raw?JSON.parse(raw):null;
+  digitalState.strokes=draft?.strokes||[];
+  if(draft?.date)$("digitalDate").value=draft.date;
+  $("digitalStatus").textContent=draft
+   ? `Lokaler Entwurf geladen · ${new Date(draft.updated_at||Date.now()).toLocaleString("de-DE")}`
+   : "Neues digitales Aufmaßblatt";
+ }catch{
+  digitalState.strokes=[];
+  $("digitalStatus").textContent="Neues digitales Aufmaßblatt";
+ }
+ digitalState.redo=[];
+ redrawDigitalCanvas();
+}
+async function digitalPreviewBlob(){
+ const canvas=$("drawingCanvas");
+ return await new Promise((resolve,reject)=>{
+  canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Vorschaubild konnte nicht erstellt werden.")),"image/png",0.96);
+ });
+}
 async function digitalPdfBlob(){const pdf=await PDFLib.PDFDocument.create(),page=pdf.addPage([595.28,841.89]);const f=await pdf.embedFont(PDFLib.StandardFonts.Helvetica),fb=await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);const id=digitalExternalId();page.drawText("Aufmaßblatt",{x:230,y:805,size:18,font:fb});page.drawText(`ID: ${id}`,{x:430,y:808,size:8,font:fb});page.drawText(`Projekt: ${state.selectedProject.name}`,{x:35,y:775,size:9,font:fb});page.drawText(`Position: ${state.selectedPosition.ordinal} – ${state.selectedPosition.short_text||""}`.slice(0,95),{x:35,y:755,size:8,font:f});page.drawText(`Datum: ${$("digitalDate").value}`,{x:430,y:775,size:8,font:f});page.drawRectangle({x:35,y:95,width:525,height:640,borderWidth:1,borderColor:PDFLib.rgb(.35,.4,.45)});const png=await digitalPreviewBlob();const img=await pdf.embedPng(await png.arrayBuffer());page.drawImage(img,{x:38,y:98,width:519,height:634});page.drawText(`BauManager Digitales Aufmaß | ${id}`,{x:35,y:55,size:7,font:f});return new Blob([await pdf.save()],{type:"application/pdf"});}
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.0"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),"Aufmaßblatt erfolgreich übertragen.",false,true);}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
+async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.1"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
 
 $("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
 $("homeButton").onclick=()=>state.account&&showView("dashboardView");
 $("accountButton").onclick=()=>{state.previousView=views.find(v=>!$(v).classList.contains("hidden"))||"dashboardView";showView("accountView")};
 $("backFromAccount").onclick=()=>showView(state.previousView);
-$("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").onclick=()=>showView("positionView");$("backFromDigital").onclick=()=>showView("positionDetailView");$("digitalMeasurementButton").onclick=openDigitalMeasurement;$("digitalSheetNumber").onchange=updateDigitalId;$("digitalDate").onchange=autoSaveDigitalDraft;$("digitalPen").onclick=()=>{digitalState.tool="pen"};$("digitalEraser").onclick=()=>{digitalState.tool="eraser"};$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLocalSave").onclick=autoSaveDigitalDraft;$("digitalCloudSave").onclick=saveDigitalToCloud;$("closeUploadPanel").onclick=closeUploadPanel;
+$("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").onclick=()=>showView("positionView");$("backFromDigital").onclick=()=>showView("positionDetailView");$("digitalMeasurementButton").onclick=openDigitalMeasurement;$("digitalSheetNumber").onchange=updateDigitalId;$("digitalDate").onchange=autoSaveDigitalDraft;$("digitalPen").onclick=()=>setDigitalTool("pen");$("digitalEraser").onclick=()=>setDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;$("digitalLocalSave").onclick=autoSaveDigitalDraft;$("digitalCloudSave").onclick=saveDigitalToCloud;$("closeUploadPanel").onclick=closeUploadPanel;
 $("cameraInput").onchange=e=>{addFiles(e.target.files);e.target.value=""};$("libraryInput").onchange=e=>{addFiles(e.target.files);e.target.value=""};$("uploadButton").onclick=uploadSelectedFiles;$("sheetNumber").onchange=updateIdPreview;
-document.querySelectorAll(".action-card").forEach(b=>b.onclick=()=>openUploadPanel(b.dataset.category));
+document.querySelectorAll(".action-card[data-category]").forEach(b=>b.onclick=()=>openUploadPanel(b.dataset.category));
 $("projectSearch").oninput=e=>{const q=e.target.value.trim().toLowerCase();renderProjects(state.projects.filter(p=>`${p.project_number||""} ${p.name||""}`.toLowerCase().includes(q)))};
 $("positionSearch").oninput=e=>{const q=e.target.value.trim().toLowerCase(),positions=state.selectedProject?.positions||[];renderPositions(positions.filter(p=>`${p.ordinal||""} ${p.short_text||""} ${titleKey(p)}`.toLowerCase().includes(q)))};
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});

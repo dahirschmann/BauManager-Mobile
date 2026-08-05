@@ -168,7 +168,17 @@
       <div class="digital-toolbar panel">
         <div><span class="eyebrow">Digitales Aufmaß</span><h1 id="digitalId"></h1></div>
         <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
-        <div class="tool-row"><button id="digitalPen" class="outline">✎ Stift</button><button id="digitalEraser" class="outline">⌫ Radierer</button><button id="digitalUndo" class="outline">↶</button><button id="digitalRedo" class="outline">↷</button><button id="digitalClear" class="outline">Leeren</button></div>
+        <div class="tool-row">
+          <button id="digitalPen" class="outline">✎ Stift</button>
+          <button id="digitalEraser" class="outline">⌫ Radierer</button>
+          <label class="line-width-control">Strich
+            <input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5">
+            <span id="digitalLineWidthValue">2,5 mm</span>
+          </label>
+          <button id="digitalUndo" class="outline" aria-label="Rückgängig">↶</button>
+          <button id="digitalRedo" class="outline" aria-label="Wiederholen">↷</button>
+          <button id="digitalClear" class="outline">Leeren</button>
+        </div>
       </div>
       <div class="measurement-paper">
         <div class="paper-title">Aufmaßblatt</div>
