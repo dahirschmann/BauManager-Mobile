@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.1"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.2"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -592,8 +592,241 @@ async function digitalPreviewBlob(){
   canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Vorschaubild konnte nicht erstellt werden.")),"image/png",0.96);
  });
 }
-async function digitalPdfBlob(){const pdf=await PDFLib.PDFDocument.create(),page=pdf.addPage([595.28,841.89]);const f=await pdf.embedFont(PDFLib.StandardFonts.Helvetica),fb=await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);const id=digitalExternalId();page.drawText("Aufmaßblatt",{x:230,y:805,size:18,font:fb});page.drawText(`ID: ${id}`,{x:430,y:808,size:8,font:fb});page.drawText(`Projekt: ${state.selectedProject.name}`,{x:35,y:775,size:9,font:fb});page.drawText(`Position: ${state.selectedPosition.ordinal} – ${state.selectedPosition.short_text||""}`.slice(0,95),{x:35,y:755,size:8,font:f});page.drawText(`Datum: ${$("digitalDate").value}`,{x:430,y:775,size:8,font:f});page.drawRectangle({x:35,y:95,width:525,height:640,borderWidth:1,borderColor:PDFLib.rgb(.35,.4,.45)});const png=await digitalPreviewBlob();const img=await pdf.embedPng(await png.arrayBuffer());page.drawImage(img,{x:38,y:98,width:519,height:634});page.drawText(`BauManager Digitales Aufmaß | ${id}`,{x:35,y:55,size:7,font:f});return new Blob([await pdf.save()],{type:"application/pdf"});}
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.1"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
+async function digitalTransparentPreviewBlob(){
+ const source=$("drawingCanvas");
+ const rect=source.getBoundingClientRect();
+ const dpr=Math.max(1,window.devicePixelRatio||1);
+ const canvas=document.createElement("canvas");
+ canvas.width=Math.max(1,Math.round(rect.width*dpr));
+ canvas.height=Math.max(1,Math.round(rect.height*dpr));
+ const context=canvas.getContext("2d");
+ context.setTransform(dpr,0,0,dpr,0,0);
+ for(const stroke of digitalState.strokes)drawStroke(context,stroke);
+ return await new Promise((resolve,reject)=>{
+  canvas.toBlob(
+   blob=>blob?resolve(blob):reject(new Error("Transparente Zeichnung konnte nicht erstellt werden.")),
+   "image/png"
+  );
+ });
+}
+function pdfMm(value){return value*72/25.4;}
+function pdfFormatQuantity(value){
+ const number=Number(value);
+ if(!Number.isFinite(number))return String(value??"");
+ return number.toLocaleString("de-DE",{minimumFractionDigits:0,maximumFractionDigits:3});
+}
+function pdfTextWidth(font,text,size){return font.widthOfTextAtSize(String(text||""),size);}
+function pdfDrawRight(page,font,text,right,y,size,options={}){
+ page.drawText(String(text||""),{x:right-pdfTextWidth(font,text,size),y,size,font,...options});
+}
+function pdfDrawCentered(page,font,text,center,y,size,options={}){
+ page.drawText(String(text||""),{x:center-pdfTextWidth(font,text,size)/2,y,size,font,...options});
+}
+function pdfWrapLines(font,text,size,maxWidth,maxLines=3){
+ const words=String(text||"").replace(/\r/g,"").split(/\s+/).filter(Boolean);
+ const lines=[];
+ let current="";
+ for(const word of words){
+  const candidate=current?`${current} ${word}`:word;
+  if(pdfTextWidth(font,candidate,size)<=maxWidth){
+   current=candidate;
+  }else{
+   if(current)lines.push(current);
+   current=word;
+   if(lines.length>=maxLines)break;
+  }
+ }
+ if(current&&lines.length<maxLines)lines.push(current);
+ if(lines.length===maxLines){
+  const used=lines.join(" ").split(/\s+/).length;
+  if(used<words.length){
+   let last=lines[lines.length-1];
+   while(last&&pdfTextWidth(font,`${last}...`,size)>maxWidth)last=last.slice(0,-1);
+   lines[lines.length-1]=`${last.trim()}...`;
+  }
+ }
+ return lines;
+}
+function pdfDrawWrapped(page,font,text,x,y,maxWidth,size,lineHeight,maxLines=3,options={}){
+ const lines=pdfWrapLines(font,text,size,maxWidth,maxLines);
+ lines.forEach((line,index)=>page.drawText(line,{x,y:y-index*lineHeight,size,font,...options}));
+ return y-lines.length*lineHeight;
+}
+function pdfDrawRect(page,x,y,width,height,borderWidth=.7,fillColor=null){
+ page.drawRectangle({
+  x,y,width,height,
+  borderWidth,
+  borderColor:PDFLib.rgb(0,0,0),
+  ...(fillColor?{color:fillColor}:{})
+ });
+}
+function pdfDrawSumBox(page,font,bold,x,y,width,height,rows){
+ pdfDrawRect(page,x,y,width,height,.65,PDFLib.rgb(1,1,1));
+ const rowHeight=height/rows.length;
+ rows.forEach((row,index)=>{
+  const rowBottom=y+height-(index+1)*rowHeight;
+  if(index>0)page.drawLine({
+   start:{x,y:rowBottom+rowHeight},
+   end:{x:x+width,y:rowBottom+rowHeight},
+   thickness:.65
+  });
+  page.drawText(row.label,{x:x+pdfMm(2.5),y:rowBottom+rowHeight-pdfMm(4.2),size:7.5,font:bold});
+  const writeY=rowBottom+pdfMm(3.1);
+  page.drawLine({
+   start:{x:x+pdfMm(3),y:writeY},
+   end:{x:x+width-pdfMm(12),y:writeY},
+   thickness:.45
+  });
+  pdfDrawRight(page,font,row.unit||"",x+width-pdfMm(2.5),writeY-pdfMm(1),7.5);
+ });
+}
+function digitalProjectAddress(value){
+ return String(value||"").replace(/\r/g,"").split("\n").map(line=>line.trim()).filter(Boolean).join("\n");
+}
+async function digitalPdfBlob(){
+ const pdf=await PDFLib.PDFDocument.create();
+ const page=pdf.addPage([595.28,841.89]);
+ const font=await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
+ const bold=await pdf.embedFont(PDFLib.StandardFonts.HelveticaBold);
+ const pageWidth=page.getWidth();
+ const pageHeight=page.getHeight();
+ const margin=pdfMm(12);
+ const contentWidth=pageWidth-2*margin;
+ const id=digitalExternalId();
+ const sheetNo=Number($("digitalSheetNumber").value||0);
+ const project=state.selectedProject||{};
+ const position=state.selectedPosition||{};
+ const unit=position.unit||"";
+ const quantity=pdfFormatQuantity(position.quantity);
+ const gridColor=PDFLib.rgb(0.72,0.745,0.776);
+
+ pdf.setTitle(`Aufmaßblatt ${id}`);
+ pdf.setAuthor("BauAufmaß");
+
+ pdfDrawCentered(page,bold,"Aufmaßblatt",pageWidth/2,pageHeight-pdfMm(15)-5,20);
+ pdfDrawRight(page,bold,`ID: ${id}`,pageWidth-margin,pageHeight-pdfMm(15)-2,8);
+
+ const topY=pageHeight-pdfMm(22);
+ const headerH=pdfMm(25);
+ const partyW=pdfMm(77);
+ const numberW=contentWidth-2*partyW;
+ pdfDrawRect(page,margin,topY-headerH,partyW,headerH,.75);
+ pdfDrawRect(page,margin+partyW,topY-headerH,partyW,headerH,.75);
+ pdfDrawRect(page,margin+2*partyW,topY-headerH,numberW,headerH,.75);
+
+ page.drawText("Auftraggeber:",{x:margin+pdfMm(3),y:topY-pdfMm(5)-2,size:8.5,font:bold});
+ page.drawText("Auftragnehmer:",{x:margin+partyW+pdfMm(3),y:topY-pdfMm(5)-2,size:8.5,font:bold});
+ page.drawText("Blatt-Nr.:",{x:margin+2*partyW+pdfMm(3),y:topY-pdfMm(5)-2,size:8.5,font:bold});
+
+ pdfDrawWrapped(page,bold,project.client_name||"",margin+pdfMm(3),topY-pdfMm(10.5)-2,partyW-pdfMm(6),8,pdfMm(3.7),2);
+ pdfDrawWrapped(page,font,digitalProjectAddress(project.client_address),margin+pdfMm(3),topY-pdfMm(18)-2,partyW-pdfMm(6),7.5,pdfMm(3.5),2);
+ pdfDrawWrapped(page,bold,project.contractor_name||"",margin+partyW+pdfMm(3),topY-pdfMm(10.5)-2,partyW-pdfMm(6),8,pdfMm(3.7),2);
+ pdfDrawWrapped(page,font,digitalProjectAddress(project.contractor_address),margin+partyW+pdfMm(3),topY-pdfMm(18)-2,partyW-pdfMm(6),7.5,pdfMm(3.5),2);
+ pdfDrawCentered(page,font,String(sheetNo).padStart(3,"0"),margin+2*partyW+numberW/2,topY-pdfMm(13)-3,10);
+
+ let y=topY-headerH;
+ const projectH=pdfMm(17);
+ pdfDrawRect(page,margin,y-projectH,contentWidth,projectH,.75);
+ page.drawText("Bezeichnung der Bauleistung / Projekt:",{x:margin+pdfMm(3),y:y-pdfMm(4.7)-2,size:8,font:bold});
+ pdfDrawWrapped(page,bold,project.name||"",margin+pdfMm(3),y-pdfMm(10.5)-2,contentWidth-pdfMm(6),8.5,pdfMm(3.8),2);
+
+ y-=projectH;
+ const serviceH=pdfMm(24);
+ const rightW=pdfMm(42);
+ const leftW=contentWidth-rightW;
+ pdfDrawRect(page,margin,y-serviceH,leftW,serviceH,.75);
+ pdfDrawRect(page,margin+leftW,y-serviceH,rightW,serviceH,.75);
+ page.drawText("Position / Kurzbeschreibung:",{x:margin+pdfMm(3),y:y-pdfMm(4.8)-2,size:8,font:bold});
+ page.drawText(position.ordinal||"",{x:margin+pdfMm(3),y:y-pdfMm(11)-2,size:8.5,font:bold});
+ pdfDrawWrapped(page,bold,position.short_text||"",margin+pdfMm(24),y-pdfMm(11)-2,leftW-pdfMm(28),8.5,pdfMm(3.8),3);
+
+ const rightX=margin+leftW;
+ page.drawText("Einheit:",{x:rightX+pdfMm(3),y:y-pdfMm(5)-2,size:8,font:bold});
+ pdfDrawRight(page,font,unit,rightX+rightW-pdfMm(3),y-pdfMm(5)-2,9);
+ page.drawLine({start:{x:rightX,y:y-pdfMm(10)},end:{x:rightX+rightW,y:y-pdfMm(10)},thickness:.75});
+ page.drawText("LV-Menge:",{x:rightX+pdfMm(3),y:y-pdfMm(15)-2,size:8,font:bold});
+ pdfDrawRight(page,font,quantity,rightX+rightW-pdfMm(3),y-pdfMm(21)-2,9);
+
+ y-=serviceH;
+ const labelH=pdfMm(7);
+ pdfDrawRect(page,margin,y-labelH,contentWidth,labelH,.75);
+ page.drawText("Aufmaß / Skizze / Berechnung",{x:margin+pdfMm(3),y:y-pdfMm(4.7)-2,size:8.5,font:bold});
+
+ const gridTop=y-labelH;
+ const gridBottom=pdfMm(27);
+ const gridHeight=gridTop-gridBottom;
+ pdfDrawRect(page,margin,gridBottom,contentWidth,gridHeight,.7);
+
+ for(let gx=margin+pdfMm(5);gx<margin+contentWidth;gx+=pdfMm(5)){
+  page.drawLine({start:{x:gx,y:gridBottom},end:{x:gx,y:gridTop},thickness:.32,color:gridColor});
+ }
+ for(let gy=gridBottom+pdfMm(5);gy<gridTop;gy+=pdfMm(5)){
+  page.drawLine({start:{x:margin,y:gy},end:{x:margin+contentWidth,y:gy},thickness:.32,color:gridColor});
+ }
+
+ const transparent=await digitalTransparentPreviewBlob();
+ const drawing=await pdf.embedPng(await transparent.arrayBuffer());
+ const canvas=$("drawingCanvas");
+ const canvasRect=canvas.getBoundingClientRect();
+ const sourceRatio=Math.max(.01,canvasRect.width/canvasRect.height);
+ const targetRatio=contentWidth/gridHeight;
+ let drawWidth=contentWidth;
+ let drawHeight=gridHeight;
+ let drawX=margin;
+ let drawY=gridBottom;
+ if(sourceRatio>targetRatio){
+  drawHeight=contentWidth/sourceRatio;
+  drawY=gridBottom+(gridHeight-drawHeight)/2;
+ }else{
+  drawWidth=gridHeight*sourceRatio;
+  drawX=margin+(contentWidth-drawWidth)/2;
+ }
+ page.drawImage(drawing,{x:drawX,y:drawY,width:drawWidth,height:drawHeight});
+
+ const sumW=pdfMm(56);
+ const upperH=pdfMm(14);
+ const lowerH=pdfMm(27);
+ const inset=pdfMm(3);
+ const previousLabel=sheetNo>1?`Übertrag Σ Blatt ${String(sheetNo-1).padStart(3,"0")}`:"Übertrag Σ";
+ pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridTop-upperH-inset,sumW,upperH,[
+  {label:previousLabel,unit}
+ ]);
+ pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridBottom+inset,sumW,lowerH,[
+  {label:`Σ Blatt ${String(sheetNo).padStart(3,"0")}`,unit},
+  {label:"Gesamt Σ",unit}
+ ]);
+
+ const signatureY=pdfMm(17);
+ const lineY=pdfMm(12);
+ const leftStart=margin+pdfMm(4);
+ const leftEnd=margin+pdfMm(62);
+ const dateStart=pageWidth/2-pdfMm(23);
+ const dateEnd=pageWidth/2+pdfMm(23);
+ const rightStart=pageWidth-margin-pdfMm(62);
+ const rightEnd=pageWidth-margin-pdfMm(4);
+
+ pdfDrawCentered(page,bold,"Aufgestellt:",pageWidth/2,signatureY+pdfMm(5)-2,7.5);
+ page.drawText("für den Auftragnehmer:",{x:leftStart,y:signatureY-2,size:7.5,font});
+ pdfDrawCentered(page,font,"Datum:",(dateStart+dateEnd)/2,signatureY-2,7.5);
+ pdfDrawRight(page,font,"für den Auftraggeber:",rightEnd,signatureY-2,7.5);
+ page.drawLine({start:{x:leftStart,y:lineY},end:{x:leftEnd,y:lineY},thickness:.55});
+ page.drawLine({start:{x:dateStart,y:lineY},end:{x:dateEnd,y:lineY},thickness:.55});
+ page.drawLine({start:{x:rightStart,y:lineY},end:{x:rightEnd,y:lineY},thickness:.55});
+
+ const dateValue=$("digitalDate").value||"";
+ if(dateValue){
+  const [year,month,day]=dateValue.split("-");
+  const formatted=day&&month&&year?`${day}.${month}.${year}`:dateValue;
+  pdfDrawCentered(page,font,formatted,(dateStart+dateEnd)/2,lineY+3,8);
+ }
+
+ page.drawText(`BauAufmaß | ID: ${id}`,{
+  x:margin,y:pdfMm(6)-1,size:6.8,font,color:PDFLib.rgb(.47,.47,.47)
+ });
+
+ return new Blob([await pdf.save()],{type:"application/pdf"});
+}
+async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.2"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
 
 $("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
 $("homeButton").onclick=()=>state.account&&showView("dashboardView");
