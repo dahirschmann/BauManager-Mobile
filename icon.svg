@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 245">
+  <rect width="240" height="245" rx="28" fill="#0f2638"/>
+  <g fill="none" stroke="#18B7B0" stroke-width="6"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M108 72 L81 52 L55 25 M67 38 L67 13 M81 52 L99 27 M55 25 L42 6 M55 25 L35 22"/>
+    <path d="M132 72 L159 52 L185 25 M173 38 L173 13 M159 52 L141 27 M185 25 L198 6 M185 25 L205 22"/>
+    <path d="M108 72 L78 65 L101 91 M132 72 L162 65 L139 91 M108 72 L120 87 L132 72"/>
+    <path d="M101 91 L106 139 L120 165 L134 139 L139 91 M101 91 L120 108 L139 91 M106 139 L120 151 L134 139 M120 108 L120 165"/>
+  </g>
+  <g fill="#18B7B0">
+    <circle cx="109" cy="119" r="4"/>
+    <circle cx="131" cy="119" r="4"/>
+    <path d="M112 151 L128 151 L120 163 Z"/>
+  </g>
+  <text x="120" y="214" text-anchor="middle" fill="#18B7B0"
+        font-family="Segoe UI,Arial,sans-serif" font-size="31" font-weight="700">BauAufmaß</text>
+</svg>

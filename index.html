@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f2638">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>BauManager Mobil</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+  <script src="config.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <button id="homeButton" class="logo-button" aria-label="Startseite">
+      <img src="icon.svg" alt="">
+      <span><strong>BauManager</strong><small>Mobile Baustellenerfassung</small></span>
+    </button>
+    <button id="accountButton" class="account-button hidden" aria-label="Benutzerkonto">
+      <span id="accountInitials">BM</span>
+    </button>
+  </header>
+
+  <main id="app">
+    <section id="setupView" class="panel hidden">
+      <h1>Einrichtung fehlt</h1>
+      <p>Die Microsoft-Anwendungs-ID ist noch nicht in <code>config.js</code> eingetragen.</p>
+    </section>
+
+    <section id="loginView" class="login-panel">
+      <img src="icon.svg" class="login-logo" alt="BauManager">
+      <h1>BauManager Mobil</h1>
+      <p>Baustellenunterlagen direkt dem richtigen Projekt und der richtigen Position zuordnen.</p>
+      <button id="loginButton" class="primary large">Mit Microsoft anmelden</button>
+      <p id="loginStatus" class="status"></p>
+    </section>
+
+    <section id="dashboardView" class="hidden">
+      <div class="welcome-card">
+        <span class="eyebrow">BauManager Mobil</span>
+        <h1 id="welcomeName">Guten Tag</h1>
+        <p>Wähle ein Projekt und erfasse die Unterlagen direkt auf der Baustelle.</p>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Synchronisiert aus BauAufmaß</span>
+          <h2>Projekte</h2>
+        </div>
+        <button id="refreshButton" class="outline">↻ Aktualisieren</button>
+      </div>
+
+      <label class="search-box">
+        <span>Projekt suchen</span>
+        <input id="projectSearch" type="search" placeholder="Projektnummer oder Projektname">
+      </label>
+      <div id="projectList" class="card-list"></div>
+    </section>
+
+    <section id="positionView" class="hidden">
+      <button id="backToProjects" class="back-button">← Projekte</button>
+      <div class="project-header">
+        <span id="projectNumber" class="eyebrow"></span>
+        <h1 id="projectName"></h1>
+        <p id="projectParties"></p>
+      </div>
+
+      <label class="search-box">
+        <span>Position suchen</span>
+        <input id="positionSearch" type="search" placeholder="Positionsnummer oder Kurztext">
+      </label>
+      <div id="positionList" class="title-list"></div>
+    </section>
+
+    <section id="positionDetailView" class="hidden">
+      <button id="backToPositions" class="back-button">← Positionen</button>
+      <div class="position-summary">
+        <span id="selectedProject" class="eyebrow"></span>
+        <h1 id="selectedPosition"></h1>
+        <p id="selectedShortText"></p>
+        <div class="position-facts">
+          <span id="selectedUnit"></span>
+          <span id="selectedQuantity"></span>
+        </div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Direkt zuordnen</span>
+          <h2>Unterlage hinzufügen</h2>
+        </div>
+      </div>
+
+      <div class="action-grid">
+        <button class="action-card featured" data-category="aufmass">
+          <span class="action-icon">▤</span>
+          <strong>Aufmaß</strong>
+          <small>Fotografieren oder PDF wählen</small>
+        </button>
+        <button class="action-card" data-category="fotos">
+          <span class="action-icon">▧</span>
+          <strong>Fotos</strong>
+          <small>Ohne ID direkt ablegen</small>
+        </button>
+        <button class="action-card" data-category="lieferscheine">
+          <span class="action-icon">▱</span>
+          <strong>Lieferscheine</strong>
+          <small>Kamera oder Dateien</small>
+        </button>
+        <button class="action-card" data-category="wiegescheine">
+          <span class="action-icon">⚖</span>
+          <strong>Wiegescheine</strong>
+          <small>Kamera oder Dateien</small>
+        </button>
+        <button class="action-card" data-category="sonstige">
+          <span class="action-icon">＋</span>
+          <strong>Sonstige</strong>
+          <small>Weitere Dokumente</small>
+        </button>
+      </div>
+
+      <section id="uploadPanel" class="panel upload-panel hidden">
+        <div class="panel-header">
+          <div>
+            <span class="eyebrow">Neue Unterlagen</span>
+            <h2 id="uploadTitle"></h2>
+          </div>
+          <button id="closeUploadPanel" class="icon-button">×</button>
+        </div>
+
+        <div id="sheetFields" class="sheet-fields hidden">
+          <label>
+            Aufmaßblatt
+            <select id="sheetNumber"></select>
+          </label>
+          <div id="sheetIdPreview" class="id-preview"></div>
+        </div>
+
+        <div class="source-grid">
+          <label class="source-button">
+            <span>📷</span>
+            <strong>Kamera öffnen</strong>
+            <small>Direkt neues Foto aufnehmen</small>
+            <input id="cameraInput" type="file" accept="image/*" capture="environment" multiple>
+          </label>
+          <label class="source-button">
+            <span>▦</span>
+            <strong>Mediathek / Dateien</strong>
+            <small>Mehrere Dateien auswählen</small>
+            <input id="libraryInput" type="file" accept="image/*,.pdf,application/pdf" multiple>
+          </label>
+        </div>
+
+        <div id="fileQueue" class="file-queue"></div>
+        <button id="uploadButton" class="primary large" disabled>In OneDrive hochladen</button>
+        <div id="uploadProgress" class="status"></div>
+      </section>
+    </section>
+
+    <section id="accountView" class="hidden">
+      <button id="backFromAccount" class="back-button">← Zurück</button>
+      <div class="panel">
+        <span class="eyebrow">Microsoft-Konto</span>
+        <h1 id="accountName">Benutzerkonto</h1>
+        <p id="accountEmail"></p>
+        <button id="logoutButton" class="danger-button">Abmelden</button>
+      </div>
+    </section>
+  </main>
+
+  <template id="projectCardTemplate">
+    <button class="project-card">
+      <div class="card-main">
+        <span class="project-number"></span>
+        <strong class="project-name"></strong>
+        <small class="project-meta"></small>
+      </div>
+      <span class="chevron">›</span>
+    </button>
+  </template>
+
+  <template id="positionCardTemplate">
+    <button class="position-card">
+      <div class="card-main">
+        <span class="position-number"></span>
+        <strong class="position-text"></strong>
+        <small class="position-meta"></small>
+      </div>
+      <span class="chevron">›</span>
+    </button>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
