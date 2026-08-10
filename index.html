@@ -9,10 +9,10 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.3">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
-  <script src="config.js"></script>
+  <script src="config.js?v=2.3"></script>
 </head>
 <body>
   <header class="app-header">
@@ -180,11 +180,82 @@
           <button id="digitalClear" class="outline">Leeren</button>
         </div>
       </div>
-      <div class="measurement-paper">
-        <div class="paper-title">Aufmaßblatt</div>
-        <div class="paper-meta"><div><b>Projekt</b><span id="digitalProject"></span></div><div><b>Position</b><span id="digitalPosition"></span></div><div><b>Einheit</b><span id="digitalUnit"></span></div></div>
+      <div class="measurement-paper original-measurement-paper">
+        <div class="page-title-row">
+          <div></div>
+          <div class="paper-title">Aufmaßblatt</div>
+          <div id="digitalPageId" class="page-id"></div>
+        </div>
+
+        <div class="sheet-party-row">
+          <div class="sheet-cell party-cell">
+            <b>Auftraggeber:</b>
+            <strong id="digitalClientName"></strong>
+            <span id="digitalClientAddress" class="multiline"></span>
+          </div>
+          <div class="sheet-cell party-cell">
+            <b>Auftragnehmer:</b>
+            <strong id="digitalContractorName"></strong>
+            <span id="digitalContractorAddress" class="multiline"></span>
+          </div>
+          <div class="sheet-cell sheet-number-cell">
+            <b>Blatt-Nr.:</b>
+            <strong id="digitalPageNumber"></strong>
+          </div>
+        </div>
+
+        <div class="sheet-cell project-cell">
+          <b>Bezeichnung der Bauleistung / Projekt:</b>
+          <strong id="digitalProject"></strong>
+        </div>
+
+        <div class="position-row">
+          <div class="sheet-cell position-main">
+            <b>Position / Kurzbeschreibung:</b>
+            <div class="position-content">
+              <strong id="digitalPositionNumber"></strong>
+              <strong id="digitalPositionText"></strong>
+            </div>
+          </div>
+          <div class="position-side">
+            <div class="sheet-cell side-cell">
+              <b>Einheit:</b><span id="digitalUnit"></span>
+            </div>
+            <div class="sheet-cell side-cell">
+              <b>LV-Menge:</b><span id="digitalQuantity"></span>
+            </div>
+          </div>
+        </div>
+
         <div class="paper-heading">Aufmaß / Skizze / Berechnung</div>
-        <canvas id="drawingCanvas"></canvas>
+
+        <div class="drawing-area">
+          <canvas id="drawingCanvas"></canvas>
+          <div class="sum-box sum-box-top">
+            <b id="digitalPreviousSum">Übertrag Summe</b>
+            <div class="sum-line"><span></span><em id="digitalTopUnit"></em></div>
+          </div>
+          <div class="sum-box sum-box-bottom">
+            <div>
+              <b id="digitalSheetSum">Summe Blatt</b>
+              <div class="sum-line"><span></span><em id="digitalBottomUnit1"></em></div>
+            </div>
+            <div class="sum-divider">
+              <b>Gesamtsumme</b>
+              <div class="sum-line"><span></span><em id="digitalBottomUnit2"></em></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="signature-area">
+          <b>Aufgestellt:</b>
+          <div class="signature-grid">
+            <div><span>für den Auftragnehmer:</span><i></i></div>
+            <div><span>Datum:</span><strong id="digitalDateDisplay"></strong><i></i></div>
+            <div><span>für den Auftraggeber:</span><i></i></div>
+          </div>
+        </div>
+        <div class="paper-footer" id="digitalFooterId"></div>
       </div>
       <div class="digital-actions"><button id="digitalLocalSave" class="outline large">Entwurf speichern</button><button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button></div>
       <div id="digitalStatus" class="status"></div>
@@ -223,6 +294,6 @@
     </button>
   </template>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.3"></script>
 </body>
 </html>

@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.2 mit digitalem Aufmaß im identischen Layout des Desktop-Aufmaßblatts.",
+  "description": "BauManager Mobile v2.3 mit identischem sichtbaren Aufmaßlayout und korrigierter PDF-Erzeugung ohne WinAnsi-Fehler.",
   "icons": [
     {
       "src": "icon.svg",

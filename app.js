@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.2"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.3"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -554,9 +554,20 @@ function openDigitalMeasurement(){
  closeUploadPanel();
  renderDigitalSheetNumbers();
  $("digitalDate").value=new Date().toISOString().slice(0,10);
- $("digitalProject").textContent=`${state.selectedProject.project_number} – ${state.selectedProject.name}`;
- $("digitalPosition").textContent=`${state.selectedPosition.ordinal} – ${state.selectedPosition.short_text||""}`;
- $("digitalUnit").textContent=state.selectedPosition.unit||"";
+
+ const project=state.selectedProject||{};
+ const position=state.selectedPosition||{};
+
+ $("digitalProject").textContent=project.name||"";
+ $("digitalPositionNumber").textContent=position.ordinal||"";
+ $("digitalPositionText").textContent=position.short_text||"";
+ $("digitalUnit").textContent=position.unit||"";
+ $("digitalQuantity").textContent=formatNumber(position.quantity);
+ $("digitalClientName").textContent=project.client_name||"";
+ $("digitalClientAddress").textContent=project.client_address||"";
+ $("digitalContractorName").textContent=project.contractor_name||"";
+ $("digitalContractorAddress").textContent=project.contractor_address||"";
+
  setDigitalTool("pen");
  updateDigitalWidth();
  showView("digitalMeasurementView");
@@ -567,7 +578,36 @@ function openDigitalMeasurement(){
   loadDigitalDraft();
  },80);
 }
-function updateDigitalId(){$("digitalId").textContent=digitalExternalId();loadDigitalDraft();}
+function updateDigitalId(){
+ const id=digitalExternalId();
+ $("digitalId").textContent=id;
+ if($("digitalPageId"))$("digitalPageId").textContent=`ID: ${id}`;
+ if($("digitalTopUnit")){
+  const unit=state.selectedPosition?.unit||"";
+  $("digitalTopUnit").textContent=unit;
+  $("digitalBottomUnit1").textContent=unit;
+  $("digitalBottomUnit2").textContent=unit;
+ }
+ if($("digitalFooterId"))$("digitalFooterId").textContent=`BauAufmaß | ID: ${id}`;
+ const dateValue=$("digitalDate")?.value||"";
+ if($("digitalDateDisplay")){
+  const parts=dateValue.split("-");
+  $("digitalDateDisplay").textContent=parts.length===3?`${parts[2]}.${parts[1]}.${parts[0]}`:dateValue;
+ }
+ if($("digitalPageNumber")){
+  $("digitalPageNumber").textContent=String(Number($("digitalSheetNumber").value||0)).padStart(3,"0");
+ }
+ if($("digitalPreviousSum")){
+  const current=Number($("digitalSheetNumber").value||0);
+  $("digitalPreviousSum").textContent=current>1
+   ? `Übertrag Summe Blatt ${String(current-1).padStart(3,"0")}`
+   : "Übertrag Summe";
+ }
+ if($("digitalSheetSum")){
+  $("digitalSheetSum").textContent=`Summe Blatt ${String(Number($("digitalSheetNumber").value||0)).padStart(3,"0")}`;
+ }
+ loadDigitalDraft();
+}
 function draftObject(){return {version:1,id:digitalExternalId(),date:$("digitalDate").value,project:state.selectedProject,position:state.selectedPosition,strokes:digitalState.strokes,updated_at:new Date().toISOString(),status:"Entwurf"};}
 function autoSaveDigitalDraft(){localStorage.setItem(digitalDraftKey(),JSON.stringify(draftObject()));$("digitalStatus").textContent="Entwurf lokal gespeichert";}
 function loadDigitalDraft(){
@@ -787,13 +827,13 @@ async function digitalPdfBlob(){
  const upperH=pdfMm(14);
  const lowerH=pdfMm(27);
  const inset=pdfMm(3);
- const previousLabel=sheetNo>1?`Übertrag Σ Blatt ${String(sheetNo-1).padStart(3,"0")}`:"Übertrag Σ";
+ const previousLabel=sheetNo>1?`Übertrag Summe Blatt ${String(sheetNo-1).padStart(3,"0")}`:"Übertrag Summe";
  pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridTop-upperH-inset,sumW,upperH,[
   {label:previousLabel,unit}
  ]);
  pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridBottom+inset,sumW,lowerH,[
-  {label:`Σ Blatt ${String(sheetNo).padStart(3,"0")}`,unit},
-  {label:"Gesamt Σ",unit}
+  {label:`Summe Blatt ${String(sheetNo).padStart(3,"0")}`,unit},
+  {label:"Gesamtsumme",unit}
  ]);
 
  const signatureY=pdfMm(17);
@@ -826,13 +866,18 @@ async function digitalPdfBlob(){
 
  return new Blob([await pdf.save()],{type:"application/pdf"});
 }
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.2"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
+async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.3"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
 
 $("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
 $("homeButton").onclick=()=>state.account&&showView("dashboardView");
 $("accountButton").onclick=()=>{state.previousView=views.find(v=>!$(v).classList.contains("hidden"))||"dashboardView";showView("accountView")};
 $("backFromAccount").onclick=()=>showView(state.previousView);
-$("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").onclick=()=>showView("positionView");$("backFromDigital").onclick=()=>showView("positionDetailView");$("digitalMeasurementButton").onclick=openDigitalMeasurement;$("digitalSheetNumber").onchange=updateDigitalId;$("digitalDate").onchange=autoSaveDigitalDraft;$("digitalPen").onclick=()=>setDigitalTool("pen");$("digitalEraser").onclick=()=>setDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;$("digitalLocalSave").onclick=autoSaveDigitalDraft;$("digitalCloudSave").onclick=saveDigitalToCloud;$("closeUploadPanel").onclick=closeUploadPanel;
+$("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").onclick=()=>showView("positionView");$("backFromDigital").onclick=()=>showView("positionDetailView");$("digitalMeasurementButton").onclick=openDigitalMeasurement;$("digitalSheetNumber").onchange=updateDigitalId;$("digitalDate").onchange=()=>{
+ autoSaveDigitalDraft();
+ const value=$("digitalDate").value||"";
+ const parts=value.split("-");
+ $("digitalDateDisplay").textContent=parts.length===3?`${parts[2]}.${parts[1]}.${parts[0]}`:value;
+};$("digitalPen").onclick=()=>setDigitalTool("pen");$("digitalEraser").onclick=()=>setDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;$("digitalLocalSave").onclick=autoSaveDigitalDraft;$("digitalCloudSave").onclick=saveDigitalToCloud;$("closeUploadPanel").onclick=closeUploadPanel;
 $("cameraInput").onchange=e=>{addFiles(e.target.files);e.target.value=""};$("libraryInput").onchange=e=>{addFiles(e.target.files);e.target.value=""};$("uploadButton").onclick=uploadSelectedFiles;$("sheetNumber").onchange=updateIdPreview;
 document.querySelectorAll(".action-card[data-category]").forEach(b=>b.onclick=()=>openUploadPanel(b.dataset.category));
 $("projectSearch").oninput=e=>{const q=e.target.value.trim().toLowerCase();renderProjects(state.projects.filter(p=>`${p.project_number||""} ${p.name||""}`.toLowerCase().includes(q)))};
