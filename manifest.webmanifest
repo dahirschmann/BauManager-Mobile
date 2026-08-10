@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.5 Editor Fix",
+  "description": "BauManager Mobile v2.6: Zoom beeinflusst nur die Ansicht; Handschrift bleibt im PDF maßstäblich identisch.",
   "icons": [
     {
       "src": "icon.svg",

@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.5"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.6"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -483,16 +483,11 @@ function updateDigitalWidth(){
 function resizeDrawingCanvas(){
  const canvas=$("drawingCanvas");
  if(!canvas)return;
- const rect=canvas.getBoundingClientRect();
+ const logicalWidth=Math.max(1,canvas.clientWidth||900);
+ const logicalHeight=Math.max(1,canvas.clientHeight||720);
  const dpr=Math.max(1,window.devicePixelRatio||1);
- const width=Math.max(1,Math.round(rect.width*dpr));
- const height=Math.max(1,Math.round(rect.height*dpr));
- if(canvas.width===width&&canvas.height===height){
-  redrawDigitalCanvas();
-  return;
- }
- canvas.width=width;
- canvas.height=height;
+ const width=Math.round(logicalWidth*dpr),height=Math.round(logicalHeight*dpr);
+ if(canvas.width!==width||canvas.height!==height){canvas.width=width;canvas.height=height;}
  redrawDigitalCanvas();
 }
 function canvasPoint(event){return screenToCanvasPoint(event);}
@@ -515,17 +510,20 @@ function drawStroke(context,stroke){
  context.restore();
 }
 function redrawDigitalCanvas(){
- const canvas=$("drawingCanvas");
- if(!canvas)return;
+ const canvas=$("drawingCanvas"); if(!canvas)return;
  const context=canvas.getContext("2d");
  const dpr=Math.max(1,window.devicePixelRatio||1);
+ const logicalWidth=Math.max(1,canvas.clientWidth||900);
+ const logicalHeight=Math.max(1,canvas.clientHeight||720);
  context.setTransform(1,0,0,1,0,0);
  context.clearRect(0,0,canvas.width,canvas.height);
  context.fillStyle=digitalState.background;
  context.fillRect(0,0,canvas.width,canvas.height);
- context.scale(dpr,dpr);
+ context.setTransform(dpr,0,0,dpr,0,0);
+ context.save();context.beginPath();context.rect(0,0,logicalWidth,logicalHeight);context.clip();
  for(const stroke of digitalState.strokes)drawStroke(context,stroke);
  if(digitalState.current)drawStroke(context,digitalState.current);
+ context.restore();
 }
 function finishDigitalStroke(event){
  if(!digitalState.drawing)return;
@@ -703,9 +701,18 @@ async function digitalPreviewBlob(){
  });
 }
 async function digitalTransparentPreviewBlob(){
- const source=$("drawingCanvas"),w=source.clientWidth||900,h=source.clientHeight||720,scale=2,canvas=document.createElement("canvas");
- canvas.width=Math.round(w*scale);canvas.height=Math.round(h*scale);const context=canvas.getContext("2d");context.setTransform(scale,0,0,scale,0,0);
+ const source=$("drawingCanvas");
+ const logicalWidth=Math.max(1,source.clientWidth||900);
+ const logicalHeight=Math.max(1,source.clientHeight||720);
+ const exportScale=2;
+ const canvas=document.createElement("canvas");
+ canvas.width=Math.round(logicalWidth*exportScale);
+ canvas.height=Math.round(logicalHeight*exportScale);
+ const context=canvas.getContext("2d");
+ context.setTransform(exportScale,0,0,exportScale,0,0);
+ context.save();context.beginPath();context.rect(0,0,logicalWidth,logicalHeight);context.clip();
  for(const stroke of digitalState.strokes)drawStroke(context,stroke);
+ context.restore();
  return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Zeichnung konnte nicht erstellt werden.")),"image/png"));
 }
 function pdfMm(value){return value*72/25.4;}
@@ -925,7 +932,7 @@ async function digitalPdfBlob(){
 
  return new Blob([await pdf.save()],{type:"application/pdf"});
 }
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.5"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
+async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.6"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
 
 $("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
 $("homeButton").onclick=()=>state.account&&showView("dashboardView");
