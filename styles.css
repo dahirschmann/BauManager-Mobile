@@ -245,3 +245,41 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
  .digital-actions{position:relative!important;z-index:1!important;margin-bottom:25px!important}
  .calculation-panel{margin-top:10px}
 }
+
+/* v2.8 toolbar + formula modal */
+.digital-toolbar{
+  position:sticky!important;
+  top:72px!important;
+  z-index:300!important;
+  background:rgba(255,255,255,.985)!important;
+  overflow:visible!important;
+  max-height:none!important;
+  padding:8px!important;
+  border:1px solid var(--border);
+  box-shadow:0 4px 16px rgba(0,0,0,.10);
+}
+.tool-row{
+  display:grid!important;
+  grid-template-columns:repeat(6,minmax(0,auto))!important;
+  gap:6px!important;
+  overflow:visible!important;
+  align-items:center;
+}
+.tool-row>*{min-width:0}
+.line-width-control{grid-column:span 2}
+.zoom-controls{grid-column:span 3;width:auto!important}
+.color-control,.text-size-control{white-space:nowrap}
+.formula-modal{position:fixed;inset:0;z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px}
+.formula-modal-backdrop{position:absolute;inset:0;background:rgba(9,26,39,.52)}
+.formula-dialog{position:relative;width:min(94vw,480px);max-height:88vh;overflow:auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 22px 60px rgba(0,0,0,.28)}
+.formula-dialog label{display:block;margin:10px 0;font-size:12px;color:var(--muted);font-weight:700}
+.formula-dialog input,.formula-dialog select{display:block;width:100%;margin-top:5px;padding:11px;border:1px solid var(--border);border-radius:9px;background:#fff}
+@media(max-width:700px){
+ .digital-toolbar{top:68px!important}
+ .tool-row{grid-template-columns:repeat(4,minmax(0,1fr))!important}
+ .tool-row button{padding:7px 5px!important;font-size:10px!important}
+ .line-width-control{grid-column:span 2}
+ .zoom-controls{grid-column:1/-1!important;justify-content:center}
+ .color-control,.text-size-control{justify-content:center}
+ .digital-viewport{height:58vh!important}
+}

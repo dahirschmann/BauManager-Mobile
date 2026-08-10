@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.7 Universal-Aufmaßeditor mit Textmodus, Berechnungen, verbessertem Toolbar-Layout und Desktop-Nutzung.",
+  "description": "BauManager Mobile v2.8: vollständige obere Werkzeugleiste und Formelwerkzeug direkt im Aufmaßblatt.",
   "icons": [
     {
       "src": "icon.svg",

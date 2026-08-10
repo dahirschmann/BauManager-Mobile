@@ -9,7 +9,7 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2.7">
+  <link rel="stylesheet" href="styles.css?v=2.8">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="config.js?v=2.3"></script>
@@ -170,7 +170,7 @@
         <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
         <div class="editor-help">Stift/Text zum Eintragen · Hand zum Verschieben · Zwei Finger zum Zoomen und Verschieben</div><div class="tool-row">
           <button id="digitalPen" class="outline">✎ Stift</button>
-          <button id="digitalEraser" class="outline">⌫ Radierer</button><button id="digitalText" class="outline">T Text</button>
+          <button id="digitalEraser" class="outline">⌫ Radierer</button><button id="digitalText" class="outline">T Text</button><button id="digitalFormula" class="outline">ƒ Formel</button>
           <label class="line-width-control">Strich
             <input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5">
             <span id="digitalLineWidthValue">2,5 mm</span>
@@ -260,16 +260,6 @@
         </div>
         <div class="paper-footer" id="digitalFooterId"></div>
       </div></div></div>
-      <section class="calculation-panel">
-        <div class="section-heading"><div><span class="eyebrow">Schnellberechnung</span><h2>Berechnungen</h2></div><strong id="calculationTotal">Blattsumme: 0</strong></div>
-        <div class="calc-buttons">
-          <button data-calc="strecke" class="outline">Strecke</button>
-          <button data-calc="flaeche" class="outline">Fläche</button>
-          <button data-calc="volumen" class="outline">Volumen</button>
-          <button data-calc="frei" class="outline">Freie Formel</button>
-        </div>
-        <div id="calculationList"></div>
-      </section>
       <div class="digital-actions"><button id="digitalLocalSave" class="outline large">Entwurf speichern</button><button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button></div>
       <div id="digitalStatus" class="status"></div>
     </section>
@@ -284,6 +274,41 @@
       </div>
     </section>
   </main>
+
+  <div id="formulaModal" class="formula-modal hidden">
+    <div id="formulaModalBackdrop" class="formula-modal-backdrop"></div>
+    <div class="formula-dialog">
+      <div class="panel-header">
+        <div><span class="eyebrow">Formel ins Aufmaß</span><h2>Berechnung</h2></div>
+        <button id="formulaCancel" class="icon-button">×</button>
+      </div>
+      <label>Berechnungsart
+        <select id="formulaType">
+          <option value="strecke">Strecke</option>
+          <option value="flaeche" selected>Fläche</option>
+          <option value="volumen">Volumen</option>
+          <option value="frei">Freie Formel</option>
+        </select>
+      </label>
+      <label>Bezeichnung
+        <input id="formulaName" type="text" placeholder="z. B. Wand Nord">
+      </label>
+      <label id="formulaFieldA"><span id="formulaALabel">Länge</span>
+        <input id="formulaA" inputmode="decimal" placeholder="0,00">
+      </label>
+      <label id="formulaFieldB"><span id="formulaBLabel">Breite / Höhe</span>
+        <input id="formulaB" inputmode="decimal" placeholder="0,00">
+      </label>
+      <label id="formulaFieldC" class="hidden"><span id="formulaCLabel">Höhe</span>
+        <input id="formulaC" inputmode="decimal" placeholder="0,00">
+      </label>
+      <label id="formulaExpressionField" class="hidden">Formel / Beschreibung
+        <input id="formulaExpression" type="text" placeholder="z. B. 3 Teilflächen">
+      </label>
+      <button id="formulaInsert" class="primary large">Berechnen und ins Blatt eintragen</button>
+    </div>
+  </div>
+
 
   <template id="projectCardTemplate">
     <button class="project-card">
@@ -307,6 +332,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=2.7"></script>
+  <script src="app.js?v=2.8"></script>
 </body>
 </html>
