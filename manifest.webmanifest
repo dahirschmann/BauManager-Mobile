@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.4 mit Zoom, Pan und digitalem Aufmaßeditor.",
+  "description": "BauManager Mobile v2.5 Editor Fix",
   "icons": [
     {
       "src": "icon.svg",

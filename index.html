@@ -9,7 +9,7 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2.3">
+  <link rel="stylesheet" href="styles.css?v=2.5">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="config.js?v=2.3"></script>
@@ -168,13 +168,14 @@
       <div class="digital-toolbar panel">
         <div><span class="eyebrow">Digitales Aufmaß</span><h1 id="digitalId"></h1></div>
         <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
-        <div class="tool-row">
+        <div class="editor-help">Zwei Finger: zoomen + verschieben · Hand: mit einem Finger verschieben</div><div class="tool-row">
           <button id="digitalPen" class="outline">✎ Stift</button>
           <button id="digitalEraser" class="outline">⌫ Radierer</button>
           <label class="line-width-control">Strich
             <input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5">
             <span id="digitalLineWidthValue">2,5 mm</span>
           </label>
+          <label class="color-control">Farbe <input id="digitalColor" type="color" value="#17212b"></label>
           <button id="digitalUndo" class="outline" aria-label="Rückgängig">↶</button>
           <button id="digitalRedo" class="outline" aria-label="Wiederholen">↷</button>
           <button id="digitalPan" class="outline">✋ Verschieben</button>
@@ -296,6 +297,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=2.3"></script>
+  <script src="app.js?v=2.5"></script>
 </body>
 </html>

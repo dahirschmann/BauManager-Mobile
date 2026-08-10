@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.4"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v2.5"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -415,7 +415,7 @@ function humanSize(b){if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).to
 function escapeHtml(v){const d=document.createElement("div");d.textContent=String(v||"");return d.innerHTML}
 
 // Digitales Aufmaß – Grundgerüst
-const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",lineWidth:2.4,background:"#ffffff",bound:false,zoom:1,panX:0,panY:0,panMode:false,pointers:new Map(),pinchStart:null};
+const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",lineWidth:2.4,background:"#ffffff",strokeColor:"#17212b",bound:false,zoom:1,panX:0,panY:0,panMode:false,pointers:new Map(),pinchStart:null};
 function digitalDraftKey(){return `digital-measurement:${digitalExternalId()}`;}
 
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
@@ -458,21 +458,17 @@ function setDigitalPanMode(active){
  if($("digitalViewport"))$("digitalViewport").classList.toggle("pan-mode",digitalState.panMode);
 }
 function screenToCanvasPoint(event){
- const canvas=$("drawingCanvas");
- const rect=canvas.getBoundingClientRect();
- return {x:(event.clientX-rect.left)/digitalState.zoom,y:(event.clientY-rect.top)/digitalState.zoom,p:event.pointerType==="pen"&&event.pressure>0?event.pressure:0.5};
+ const canvas=$("drawingCanvas"),r=canvas.getBoundingClientRect();
+ return {x:(event.clientX-r.left)*((canvas.clientWidth||900)/r.width),y:(event.clientY-r.top)*((canvas.clientHeight||720)/r.height),p:event.pointerType==="pen"&&event.pressure>0?event.pressure:0.5};
 }
 function beginPinch(){
- if(digitalState.pointers.size!==2)return;
- const pts=[...digitalState.pointers.values()];
- digitalState.pinchStart={distance:Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y),zoom:digitalState.zoom,centerX:(pts[0].x+pts[1].x)/2,centerY:(pts[0].y+pts[1].y)/2};
+ if(digitalState.pointers.size!==2)return;const p=[...digitalState.pointers.values()],cx=(p[0].x+p[1].x)/2,cy=(p[0].y+p[1].y)/2;
+ digitalState.pinchStart={distance:Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y),zoom:digitalState.zoom,centerX:cx,centerY:cy,lastCenterX:cx,lastCenterY:cy};
 }
 function updatePinch(){
- if(digitalState.pointers.size!==2||!digitalState.pinchStart)return;
- const pts=[...digitalState.pointers.values()];
- const distance=Math.max(1,Math.hypot(pts[1].x-pts[0].x,pts[1].y-pts[0].y));
- const cx=(pts[0].x+pts[1].x)/2, cy=(pts[0].y+pts[1].y)/2;
- setDigitalZoom(digitalState.pinchStart.zoom*(distance/digitalState.pinchStart.distance),cx,cy);
+ if(digitalState.pointers.size!==2||!digitalState.pinchStart)return;const p=[...digitalState.pointers.values()],d=Math.max(1,Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)),cx=(p[0].x+p[1].x)/2,cy=(p[0].y+p[1].y)/2;
+ digitalState.panX+=cx-digitalState.pinchStart.lastCenterX;digitalState.panY+=cy-digitalState.pinchStart.lastCenterY;digitalState.pinchStart.lastCenterX=cx;digitalState.pinchStart.lastCenterY=cy;
+ setDigitalZoom(digitalState.pinchStart.zoom*(d/digitalState.pinchStart.distance),cx,cy);updateZoomUi();
 }
 function setDigitalTool(tool){
  digitalState.tool=tool;
@@ -507,7 +503,7 @@ function drawStroke(context,stroke){
  context.lineCap="round";
  context.lineJoin="round";
  context.globalCompositeOperation=stroke.tool==="eraser"?"destination-out":"source-over";
- context.strokeStyle="#17212b";
+ context.strokeStyle=stroke.color||"#17212b";
  context.lineWidth=stroke.tool==="eraser"
   ? Math.max(18,stroke.width*6)
   : Math.max(1,stroke.width*(0.65+(stroke.points[0]?.p||0.5)*0.7));
@@ -563,7 +559,7 @@ function bindDrawingCanvas(){
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
   digitalState.drawing=true; digitalState.redo=[];
-  digitalState.current={tool:digitalState.tool,width:digitalState.lineWidth,points:[canvasPoint(e)]};
+  digitalState.current={tool:digitalState.tool,width:digitalState.lineWidth,color:digitalState.strokeColor,points:[canvasPoint(e)]};
   redrawDigitalCanvas();
  });
  viewport.addEventListener("pointermove",e=>{
@@ -707,21 +703,10 @@ async function digitalPreviewBlob(){
  });
 }
 async function digitalTransparentPreviewBlob(){
- const source=$("drawingCanvas");
- const rect=source.getBoundingClientRect();
- const dpr=Math.max(1,window.devicePixelRatio||1);
- const canvas=document.createElement("canvas");
- canvas.width=Math.max(1,Math.round(rect.width*dpr));
- canvas.height=Math.max(1,Math.round(rect.height*dpr));
- const context=canvas.getContext("2d");
- context.setTransform(dpr,0,0,dpr,0,0);
+ const source=$("drawingCanvas"),w=source.clientWidth||900,h=source.clientHeight||720,scale=2,canvas=document.createElement("canvas");
+ canvas.width=Math.round(w*scale);canvas.height=Math.round(h*scale);const context=canvas.getContext("2d");context.setTransform(scale,0,0,scale,0,0);
  for(const stroke of digitalState.strokes)drawStroke(context,stroke);
- return await new Promise((resolve,reject)=>{
-  canvas.toBlob(
-   blob=>blob?resolve(blob):reject(new Error("Transparente Zeichnung konnte nicht erstellt werden.")),
-   "image/png"
-  );
- });
+ return await new Promise((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error("Zeichnung konnte nicht erstellt werden.")),"image/png"));
 }
 function pdfMm(value){return value*72/25.4;}
 function pdfFormatQuantity(value){
@@ -940,7 +925,7 @@ async function digitalPdfBlob(){
 
  return new Blob([await pdf.save()],{type:"application/pdf"});
 }
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.4"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
+async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v2.5"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
 
 $("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
 $("homeButton").onclick=()=>state.account&&showView("dashboardView");
@@ -952,6 +937,7 @@ $("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").o
  const parts=value.split("-");
  $("digitalDateDisplay").textContent=parts.length===3?`${parts[2]}.${parts[1]}.${parts[0]}`:value;
 };$("digitalPen").onclick=()=>setDigitalTool("pen");$("digitalEraser").onclick=()=>setDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;
+$("digitalColor").onchange=()=>digitalState.strokeColor=$("digitalColor").value;
 $("digitalPan").onclick=()=>setDigitalPanMode(!digitalState.panMode);
 $("digitalZoomIn").onclick=()=>setDigitalZoom(digitalState.zoom*1.25);
 $("digitalZoomOut").onclick=()=>setDigitalZoom(digitalState.zoom/1.25);
