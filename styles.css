@@ -305,3 +305,11 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
 }
 @media(max-width:520px){.mobile-editor-dock button{width:48px;min-height:48px;font-size:18px}.mobile-tool-panel{right:62px;width:min(74vw,300px)}.digital-sheet-workspace .digital-viewport{height:calc(100vh - 200px)!important}}
 .digital-toolbar{display:none!important}
+
+/* v2.9.1 viewport */
+.digital-sheet-workspace{position:relative;min-height:0}
+.digital-sheet-workspace .digital-viewport{position:relative!important;overflow:hidden!important}
+.digital-sheet-viewport{display:block!important;width:900px!important;min-width:900px!important;visibility:visible!important;opacity:1!important}
+.digital-sheet-viewport .measurement-paper{display:block!important;width:900px!important;min-width:900px!important}
+@media(min-width:901px){.digital-editor-view{width:min(100%,1700px)!important}.universal-editor-layout{grid-template-columns:250px minmax(700px,1fr)!important}.digital-sheet-workspace .digital-viewport{height:calc(100vh - 150px)!important;min-height:700px!important}}
+@media(max-width:900px){.digital-sheet-workspace .digital-viewport{height:calc(100dvh - 185px)!important;min-height:420px!important}}

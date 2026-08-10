@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.9 responsive Editor mit Desktop-Seitenleiste und vier mobilen Menüs.",
+  "description": "BauManager Mobile v2.9.1: vollständige Blattdarstellung und Standard-Verschieben.",
   "icons": [
     {
       "src": "icon.svg",
