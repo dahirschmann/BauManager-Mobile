@@ -1,4 +1,4 @@
-const CACHE = "baumanager-mobile-v2-6-zoom-scale-fix";
+const CACHE = "baumanager-mobile-v2-7-universal-editor";
 const SHELL = [
   "./",
   "index.html",
