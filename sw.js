@@ -1,4 +1,4 @@
-const CACHE = "baumanager-mobile-v2-8-formula-tool";
+const CACHE = "baumanager-mobile-v2-9-responsive-editor";
 const SHELL = [
   "./",
   "index.html",

@@ -9,7 +9,7 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=2.8">
+  <link rel="stylesheet" href="styles.css?v=2.9">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="config.js?v=2.3"></script>
@@ -164,26 +164,38 @@
 
 
     <section id="digitalMeasurementView" class="hidden digital-editor-view">
-      <button id="backFromDigital" class="back-button">← Position</button>
-      <div class="digital-toolbar panel">
-        <div><span class="eyebrow">Digitales Aufmaß</span><h1 id="digitalId"></h1></div>
-        <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
-        <div class="editor-help">Stift/Text zum Eintragen · Hand zum Verschieben · Zwei Finger zum Zoomen und Verschieben</div><div class="tool-row">
-          <button id="digitalPen" class="outline">✎ Stift</button>
-          <button id="digitalEraser" class="outline">⌫ Radierer</button><button id="digitalText" class="outline">T Text</button><button id="digitalFormula" class="outline">ƒ Formel</button>
-          <label class="line-width-control">Strich
-            <input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5">
-            <span id="digitalLineWidthValue">2,5 mm</span>
-          </label>
-          <label class="color-control">Farbe <input id="digitalColor" type="color" value="#17212b"></label><label class="text-size-control">Text <select id="digitalTextSize"><option>12</option><option selected>16</option><option>20</option><option>24</option></select></label>
-          <button id="digitalUndo" class="outline" aria-label="Rückgängig">↶</button>
-          <button id="digitalRedo" class="outline" aria-label="Wiederholen">↷</button>
-          <button id="digitalPan" class="outline">✋ Verschieben</button>
-          <div class="zoom-controls"><button id="digitalZoomOut" class="outline">−</button><span id="digitalZoomValue">100 %</span><button id="digitalZoomIn" class="outline">＋</button><button id="digitalZoomReset" class="outline">Ganzes Blatt</button></div>
-          <button id="digitalClear" class="outline">Leeren</button>
-        </div>
-      </div>
-      <div id="digitalViewport" class="digital-viewport"><div id="digitalSheetViewport" class="digital-sheet-viewport"><div class="measurement-paper original-measurement-paper">
+<div class="digital-editor-header">
+  <button id="backFromDigital" class="back-button">← Position</button>
+  <div><span class="eyebrow">Digitales Aufmaß</span><h1 id="digitalId"></h1></div>
+  <div class="editor-fields"><label>Blatt<select id="digitalSheetNumber"></select></label><label>Datum<input id="digitalDate" type="date"></label></div>
+</div>
+<div class="universal-editor-layout">
+<aside class="desktop-tool-rail">
+  <div class="tool-group"><h3>Bearbeiten</h3>
+    <button id="digitalPen" class="outline">✎ Stift</button>
+    <button id="digitalEraser" class="outline">⌫ Radierer</button>
+    <button id="digitalText" class="outline">T Text</button>
+    <button id="digitalFormula" class="outline">ƒ Formel</button>
+    <label class="line-width-control">Linienstärke<input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5"><span id="digitalLineWidthValue">2,5 mm</span></label>
+    <label class="color-control">Farbe <input id="digitalColor" type="color" value="#17212b"></label>
+    <label class="text-size-control">Textgröße <select id="digitalTextSize"><option>12</option><option selected>16</option><option>20</option><option>24</option></select></label>
+    <div class="rail-inline"><button id="digitalUndo" class="outline">↶</button><button id="digitalRedo" class="outline">↷</button></div>
+    <button id="digitalClear" class="outline">Leeren</button>
+  </div>
+  <div class="tool-group"><h3>Ansicht</h3>
+    <button id="digitalPan" class="outline">✋ Verschieben</button>
+    <div class="zoom-controls"><button id="digitalZoomOut" class="outline">−</button><span id="digitalZoomValue">100 %</span><button id="digitalZoomIn" class="outline">＋</button></div>
+    <button id="digitalZoomReset" class="outline">Ganzes Blatt</button>
+    <small>Mausrad: verschieben<br>Strg + Mausrad: zoomen</small>
+  </div>
+  <div class="tool-group"><h3>Berechnung</h3><p>Formel wählen und Stelle im Blatt anklicken.</p></div>
+  <div class="tool-group"><h3>Aktionen</h3>
+    <button id="digitalLocalSave" class="outline large">Entwurf speichern</button>
+    <button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button>
+    <div id="digitalStatus" class="status"></div>
+  </div>
+</aside>
+<main class="digital-sheet-workspace"><div id="digitalViewport" class="digital-viewport"><div id="digitalSheetViewport" class="digital-sheet-viewport"><div class="measurement-paper original-measurement-paper">
         <div class="page-title-row">
           <div></div>
           <div class="paper-title">Aufmaßblatt</div>
@@ -259,10 +271,28 @@
           </div>
         </div>
         <div class="paper-footer" id="digitalFooterId"></div>
-      </div></div></div>
-      <div class="digital-actions"><button id="digitalLocalSave" class="outline large">Entwurf speichern</button><button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button></div>
-      <div id="digitalStatus" class="status"></div>
-    </section>
+      </div></div></div></main>
+</div>
+<div class="mobile-editor-dock">
+  <button data-panel="edit">✎<span>Bearbeiten</span></button>
+  <button data-panel="zoom">⌕<span>Zoom</span></button>
+  <button data-panel="calc">ƒ<span>Berechnung</span></button>
+  <button data-panel="actions">⇧<span>Speichern</span></button>
+</div>
+<div class="mobile-editor-panels">
+  <div class="mobile-tool-panel panel-edit"><button class="mobile-panel-close" onclick="closeMobileEditorPanels()">×</button><h3>Bearbeiten</h3>
+    <div class="mobile-tool-grid"><button class="outline" onclick="digitalPen.click()">✎ Stift</button><button class="outline" onclick="digitalEraser.click()">⌫ Radierer</button><button class="outline" onclick="digitalText.click()">T Text</button><button class="outline" onclick="digitalUndo.click()">↶ Rückgängig</button><button class="outline" onclick="digitalRedo.click()">↷ Wiederholen</button></div>
+    <label>Linienstärke <input id="mobileLineWidth" type="range" min="1" max="8" step="0.5" value="2.5"></label>
+    <label>Farbe <input id="mobileColor" type="color" value="#17212b"></label>
+  </div>
+  <div class="mobile-tool-panel panel-zoom"><button class="mobile-panel-close" onclick="closeMobileEditorPanels()">×</button><h3>Zoom / Verschieben</h3>
+    <button class="outline" onclick="digitalPan.click()">✋ Verschieben</button>
+    <div class="mobile-tool-grid"><button class="outline" onclick="digitalZoomOut.click()">−</button><button class="outline" onclick="digitalZoomIn.click()">＋</button><button class="outline" onclick="digitalZoomReset.click()">Ganzes Blatt</button></div><p>Zwei Finger: zoomen und verschieben.</p>
+  </div>
+  <div class="mobile-tool-panel panel-calc"><button class="mobile-panel-close" onclick="closeMobileEditorPanels()">×</button><h3>Berechnung</h3><button class="primary" onclick="digitalFormula.click();closeMobileEditorPanels()">ƒ Formel ins Blatt</button><p>Danach die gewünschte Stelle antippen.</p></div>
+  <div class="mobile-tool-panel panel-actions"><button class="mobile-panel-close" onclick="closeMobileEditorPanels()">×</button><h3>Speichern</h3><button id="mobileDraftSave" class="outline large">Entwurf speichern</button><button id="mobilePdfUpload" class="primary large">PDF erzeugen und hochladen</button></div>
+</div>
+</section>
 
     <section id="accountView" class="hidden">
       <button id="backFromAccount" class="back-button">← Zurück</button>
@@ -332,6 +362,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=2.8"></script>
+  <script src="app.js?v=2.9"></script>
 </body>
 </html>

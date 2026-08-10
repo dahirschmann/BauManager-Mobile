@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.8: vollständige obere Werkzeugleiste und Formelwerkzeug direkt im Aufmaßblatt.",
+  "description": "BauManager Mobile v2.9 responsive Editor mit Desktop-Seitenleiste und vier mobilen Menüs.",
   "icons": [
     {
       "src": "icon.svg",
