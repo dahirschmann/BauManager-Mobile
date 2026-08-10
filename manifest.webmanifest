@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f1f5f7",
   "theme_color": "#0f2638",
-  "description": "BauManager Mobile v2.3 mit identischem sichtbaren Aufmaßlayout und korrigierter PDF-Erzeugung ohne WinAnsi-Fehler.",
+  "description": "BauManager Mobile v2.4 mit Zoom, Pan und digitalem Aufmaßeditor.",
   "icons": [
     {
       "src": "icon.svg",

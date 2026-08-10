@@ -197,3 +197,11 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
   .sum-box{width:205px;right:8px;font-size:10px}
   .signature-grid{gap:12px;font-size:10px}
 }
+
+.digital-viewport{position:relative;width:100%;height:min(72vh,900px);min-height:520px;overflow:hidden;background:#cfd8de;border:1px solid var(--border);border-radius:12px;touch-action:none;overscroll-behavior:contain}
+.digital-sheet-viewport{position:absolute;left:0;top:0;width:900px;transform-origin:0 0;transform:translate(var(--sheet-pan-x,0px),var(--sheet-pan-y,0px)) scale(var(--sheet-scale,1));will-change:transform}
+.digital-sheet-viewport .measurement-paper{width:900px;max-width:none;margin:0}
+.zoom-controls{display:flex;align-items:center;gap:6px;padding:4px 6px;background:#fff;border:1px solid var(--border);border-radius:9px}
+.zoom-controls span{min-width:58px;text-align:center;font-size:12px;font-weight:700;color:var(--teal-dark)}
+.digital-viewport.pan-mode{cursor:grab}.digital-viewport.pan-mode:active{cursor:grabbing}
+@media(max-width:700px){.digital-viewport{height:68vh;min-height:480px}.zoom-controls{width:100%;justify-content:center}}

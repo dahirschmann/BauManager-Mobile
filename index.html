@@ -177,10 +177,12 @@
           </label>
           <button id="digitalUndo" class="outline" aria-label="Rückgängig">↶</button>
           <button id="digitalRedo" class="outline" aria-label="Wiederholen">↷</button>
+          <button id="digitalPan" class="outline">✋ Verschieben</button>
+          <div class="zoom-controls"><button id="digitalZoomOut" class="outline">−</button><span id="digitalZoomValue">100 %</span><button id="digitalZoomIn" class="outline">＋</button><button id="digitalZoomReset" class="outline">Ganzes Blatt</button></div>
           <button id="digitalClear" class="outline">Leeren</button>
         </div>
       </div>
-      <div class="measurement-paper original-measurement-paper">
+      <div id="digitalViewport" class="digital-viewport"><div id="digitalSheetViewport" class="digital-sheet-viewport"><div class="measurement-paper original-measurement-paper">
         <div class="page-title-row">
           <div></div>
           <div class="paper-title">Aufmaßblatt</div>
@@ -256,7 +258,7 @@
           </div>
         </div>
         <div class="paper-footer" id="digitalFooterId"></div>
-      </div>
+      </div></div></div>
       <div class="digital-actions"><button id="digitalLocalSave" class="outline large">Entwurf speichern</button><button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button></div>
       <div id="digitalStatus" class="status"></div>
     </section>
