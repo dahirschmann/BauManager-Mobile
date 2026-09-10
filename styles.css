@@ -467,3 +467,9 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
   text-align:right;
   font-variant-numeric:tabular-nums;
 }
+
+/* v3.2.0 freely movable desktop sheet */
+.digital-viewport.pan-mode,
+.digital-viewport.pan-mode *{cursor:grab!important}
+.digital-viewport.pan-mode:active,
+.digital-viewport.pan-mode:active *{cursor:grabbing!important}

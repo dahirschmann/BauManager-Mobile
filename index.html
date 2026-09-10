@@ -9,7 +9,7 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=3.1.5">
+  <link rel="stylesheet" href="styles.css?v=3.2.0">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="config.js?v=2.3"></script>
@@ -186,7 +186,7 @@
   <div class="tool-group"><h3>Ansicht</h3>
     <button id="digitalPan" class="outline">✋ Verschieben</button>
     <div class="zoom-controls"><button id="digitalZoomOut" class="outline">−</button><span id="digitalZoomValue">100 %</span><button id="digitalZoomIn" class="outline">＋</button></div>
-    <button id="digitalZoomReset" class="outline">Ganzes Blatt</button>
+    <button id="digitalFitWidth" class="outline">Breite einpassen</button><button id="digitalZoomReset" class="outline">Ganzes Blatt</button>
     <small>Mausrad: verschieben<br>Strg + Mausrad: zoomen</small>
   </div>
   <div class="tool-group"><h3>Berechnung</h3><p>Formel wählen und Stelle im Blatt anklicken.</p></div>
@@ -288,7 +288,7 @@
   </div>
   <div class="mobile-tool-panel panel-zoom"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Zoom / Verschieben</h3>
     <button class="outline" onclick="digitalPan.click()">✋ Verschieben</button>
-    <div class="mobile-tool-grid"><button class="outline" onclick="digitalZoomOut.click()">−</button><button class="outline" onclick="digitalZoomIn.click()">＋</button><button class="outline" onclick="digitalZoomReset.click()">Ganzes Blatt</button></div><p>Zwei Finger: zoomen und verschieben.</p>
+    <div class="mobile-tool-grid"><button class="outline" onclick="digitalZoomOut.click()">−</button><button class="outline" onclick="digitalZoomIn.click()">＋</button><button class="outline" onclick="digitalFitWidth.click()">Breite</button><button class="outline" onclick="digitalZoomReset.click()">Ganzes Blatt</button></div><p>Zwei Finger: zoomen und verschieben.</p>
   </div>
   <div class="mobile-tool-panel panel-calc"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Berechnung</h3><button class="primary" onclick="digitalFormula.click();closeMobileEditorPanels()">ƒ Formel ins Blatt</button><p>Danach die gewünschte Stelle antippen.</p></div>
   <div class="mobile-tool-panel panel-actions"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Speichern</h3><button id="mobileDraftSave" class="outline large">Entwurf speichern</button><button id="mobilePdfUpload" class="primary large">PDF erzeugen und hochladen</button><button class="outline large" onclick="document.getElementById('digitalAttachmentInput').click()">＋ Anhang zu diesem Blatt</button></div>
@@ -378,6 +378,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=3.1.5"></script>
+  <script src="app.js?v=3.2.0"></script>
 </body>
 </html>

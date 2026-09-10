@@ -474,11 +474,21 @@ function digitalDraftKey(){return `digital-measurement:${digitalExternalId()}`;}
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
 
 function constrainDigitalPan(){
- const viewport=$("digitalViewport"),sheet=$("digitalSheetViewport"); if(!viewport||!sheet)return;
+ const viewport=$("digitalViewport"),sheet=$("digitalSheetViewport");if(!viewport||!sheet)return;
  const sheetWidth=sheet.offsetWidth||900,sheetHeight=sheet.offsetHeight||1120;
- const sw=sheetWidth*digitalState.zoom,sh=sheetHeight*digitalState.zoom,vw=viewport.clientWidth,vh=viewport.clientHeight,margin=28;
- if(sw<=vw-margin*2)digitalState.panX=(vw-sw)/2;else digitalState.panX=clamp(digitalState.panX,vw-sw-margin,margin);
- if(sh<=vh-margin*2)digitalState.panY=(vh-sh)/2;else digitalState.panY=clamp(digitalState.panY,vh-sh-margin,margin);
+ const sw=sheetWidth*digitalState.zoom,sh=sheetHeight*digitalState.zoom;
+ const vw=viewport.clientWidth,vh=viewport.clientHeight;
+ const visibleMin=70;
+
+ // Unlike the old implementation, a smaller sheet is NOT forced back to the
+ // centre. The user can freely move it in every direction while at least a
+ // small portion remains visible.
+ const minX=visibleMin-sw;
+ const maxX=vw-visibleMin;
+ const minY=visibleMin-sh;
+ const maxY=vh-visibleMin;
+ digitalState.panX=clamp(digitalState.panX,minX,maxX);
+ digitalState.panY=clamp(digitalState.panY,minY,maxY);
 }
 function updateZoomUi(){
  constrainDigitalPan();
@@ -1172,6 +1182,7 @@ function bindDrawingCanvas(){
   updatePointer(e);
   if(digitalState.pointers.size===2){digitalState.drawing=false;digitalState.current=null;beginPinch();return;}
   if(digitalState.panMode){
+   e.preventDefault();
    viewport.setPointerCapture(e.pointerId);
    viewport.dataset.panPointer=String(e.pointerId);
    viewport.dataset.panStartX=String(e.clientX); viewport.dataset.panStartY=String(e.clientY);
@@ -1734,6 +1745,7 @@ $("formulaModalBackdrop").onclick=closeFormulaModal;
 $("digitalPan").onclick=()=>setDigitalPanMode(!digitalState.panMode);
 $("digitalZoomIn").onclick=()=>setDigitalZoom(digitalState.zoom*1.25);
 $("digitalZoomOut").onclick=()=>setDigitalZoom(digitalState.zoom/1.25);
+$("digitalFitWidth").onclick=fitDigitalViewForEditing;
 $("digitalZoomReset").onclick=resetDigitalView;$("digitalLocalSave").onclick=autoSaveDigitalDraft;$("digitalCloudSave").onclick=saveDigitalToCloud;
 
 document.querySelectorAll(".mobile-editor-dock button[data-panel]").forEach(button=>button.onclick=()=>toggleMobileEditorPanel(button.dataset.panel));
