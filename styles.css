@@ -390,3 +390,48 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
     box-sizing:border-box!important;
   }
 }
+
+/* v3.1.4: Desktop editor really leaves the global 900px app container */
+@media (min-width:901px){
+  body.digital-editor-open main#app{
+    max-width:none!important;
+    width:100%!important;
+    margin:0!important;
+    padding:14px 18px 30px!important;
+    box-sizing:border-box!important;
+  }
+  body.digital-editor-open #digitalMeasurementView{
+    width:100%!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:0!important;
+  }
+  body.digital-editor-open #digitalMeasurementView .universal-editor-layout{
+    grid-template-columns:250px minmax(700px,1fr)!important;
+    width:100%!important;
+  }
+  body.digital-editor-open #digitalMeasurementView .digital-sheet-workspace{
+    width:100%!important;
+    min-width:700px!important;
+  }
+  body.digital-editor-open #digitalMeasurementView .digital-viewport{
+    width:100%!important;
+    min-width:700px!important;
+    background:#dce3e8!important;
+  }
+  body.digital-editor-open #digitalSheetViewport{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+    width:900px!important;
+    min-width:900px!important;
+  }
+  body.digital-editor-open #digitalSheetViewport .measurement-paper{
+    display:block!important;
+    visibility:visible!important;
+    opacity:1!important;
+    background:#fff!important;
+    width:900px!important;
+    min-width:900px!important;
+  }
+}

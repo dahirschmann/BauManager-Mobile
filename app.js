@@ -11,7 +11,11 @@ const $=id=>document.getElementById(id);
 const views=["setupView","loginView","dashboardView","positionView","positionDetailView","digitalMeasurementView","accountView"];
 let msalInstance=null;
 
-function showView(id){views.forEach(v=>$(v).classList.toggle("hidden",v!==id));window.scrollTo({top:0,behavior:"smooth"})}
+function showView(id){
+ views.forEach(v=>$(v).classList.toggle("hidden",v!==id));
+ document.body.classList.toggle("digital-editor-open",id==="digitalMeasurementView");
+ window.scrollTo({top:0,behavior:"smooth"});
+}
 function setStatus(el,msg,error=false,success=false){el.textContent=msg||"";el.classList.toggle("error",error);el.classList.toggle("success",success)}
 function isConfigured(){return config.clientId&&!config.clientId.includes("HIER_")}
 function initials(name){return String(name||"BM").split(/\s+/).slice(0,2).map(x=>x[0]||"").join("").toUpperCase()}
@@ -484,6 +488,9 @@ function updateZoomUi(){
   sheet.style.setProperty("--sheet-scale",digitalState.zoom);
   sheet.style.setProperty("--sheet-pan-x",`${digitalState.panX}px`);
   sheet.style.setProperty("--sheet-pan-y",`${digitalState.panY}px`);
+  // Direkter Transform als robuste Edge-Fallback-Lösung.
+  sheet.style.transform=`translate(${digitalState.panX}px, ${digitalState.panY}px) scale(${digitalState.zoom})`;
+  sheet.style.transformOrigin="0 0";
  }
 }
 function setDigitalZoom(next,anchorX=null,anchorY=null){
