@@ -435,3 +435,35 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
     min-width:900px!important;
   }
 }
+
+/* v3.1.5 Sum fields */
+#digitalTransferValue{
+  font-size:16px!important;
+  font-weight:800!important;
+  line-height:1.15!important;
+  text-align:center!important;
+  flex:1 1 auto!important;
+}
+.sum-box .sum-line em{
+  font-size:12px!important;
+  min-width:34px!important;
+}
+.sheet-sum-input{
+  font-size:15px!important;
+  min-width:92px!important;
+}
+
+/* v3.1.5 Aufmaßtabelle */
+.measurement-table-drag-handle{
+  cursor:move!important;
+  user-select:none!important;
+  touch-action:none!important;
+}
+.measurement-table-drag-handle strong{font-size:11px}
+.measurement-table-object{
+  resize:none;
+}
+.measurement-entry-table input[data-kind="number"]{
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}

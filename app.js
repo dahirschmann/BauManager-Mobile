@@ -508,6 +508,26 @@ function setDigitalZoom(next,anchorX=null,anchorY=null){
  digitalState.zoom=value;
  updateZoomUi();
 }
+
+function fitDigitalViewForEditing(){
+ const viewport=$("digitalViewport"),sheet=$("digitalSheetViewport");if(!viewport||!sheet)return;
+ const desktop=window.matchMedia("(min-width: 901px)").matches;
+ if(!desktop){resetDigitalView();return;}
+
+ const sheetWidth=Math.max(900,sheet.offsetWidth||0,sheet.scrollWidth||0);
+ const vw=Math.max(1,viewport.clientWidth);
+ const pad=36;
+
+ // Am PC ist "arbeitsfähig" wichtiger als eine Miniaturansicht der ganzen A4-Seite:
+ // Blattbreite einpassen, vertikal kann verschoben/gescrollt werden.
+ const fitWidth=(vw-pad*2)/sheetWidth;
+ digitalState.zoom=clamp(fitWidth,0.72,1.18);
+ digitalState.panX=(vw-sheetWidth*digitalState.zoom)/2;
+ digitalState.panY=22;
+ updateZoomUi();
+ resizeDrawingCanvas();
+}
+
 function resetDigitalView(){
  const viewport=$("digitalViewport"),sheet=$("digitalSheetViewport");if(!viewport||!sheet)return;
  const desktop=window.matchMedia("(min-width: 901px)").matches;
@@ -637,7 +657,14 @@ function deductionValue(row,parentType){
  const a=parseGermanNumber(row.a),b=parseGermanNumber(row.b),c=parseGermanNumber(row.c),count=parseGermanNumber(row.count||1)||1;
  if(parentType==="laenge")return -(a*count);if(parentType==="volumen")return -(a*b*c*count);if(parentType==="stueck")return -parseGermanNumber(row.count);return -(a*b*count);
 }
-function rowIsEmpty(row){return !["room","name","a","b","c","count"].some(key=>String(row[key]??"").trim()!=="") || (String(row.name||"")==="" && String(row.room||"")==="" && !parseGermanNumber(row.a) && !parseGermanNumber(row.b) && !parseGermanNumber(row.c));}
+function rowIsEmpty(row){
+ return String(row.room||"").trim()==="" &&
+        String(row.name||"").trim()==="" &&
+        !parseGermanNumber(row.a) &&
+        !parseGermanNumber(row.b) &&
+        !parseGermanNumber(row.c) &&
+        (String(row.count??"").trim()==="" || parseGermanNumber(row.count)===1);
+}
 function tableSignedValue(table,index){
  const row=table.rows[index];
  if(row.kind==="deduction"){let parentType=table.type;for(let i=index-1;i>=0;i--){if(table.rows[i].kind!=="deduction"){parentType=table.rows[i].type||table.type;break;}}return deductionValue(row,parentType);}
@@ -656,34 +683,237 @@ function openTableTemplateAt(x,y){
 }
 function closeTableTemplateModal(){$("tableTemplateModal").classList.add("hidden");digitalState.tablePoint=null;}
 function insertSelectedTable(){if(!digitalState.tablePoint)return;createMeasurementTableAt(digitalState.tablePoint.x,digitalState.tablePoint.y,$("tableTemplateType").value);closeTableTemplateModal();}
-function renderMeasurementTables(){
- const layer=$("digitalTableLayer");if(!layer)return;layer.innerHTML="";
- for(const table of digitalState.tables||[]){
-  const wrap=document.createElement("div");wrap.className="measurement-table-object";wrap.dataset.tableId=table.id;wrap.style.left=`${table.x}px`;wrap.style.top=`${table.y}px`;wrap.style.width=`${table.width}px`;
-  const head=document.createElement("div");head.className="measurement-table-title";head.innerHTML=`<strong>${escapeHtml(({wand:"Wandflächen",boden:"Bodenflächen",decke:"Deckenflächen",laenge:"Längen",volumen:"Volumen",stueck:"Stück"})[table.type]||"Aufmaßtabelle")}</strong><span>Tab = nächste Zelle · Rechtsklick = Zeilenoptionen</span>`;wrap.appendChild(head);
-  const grid=document.createElement("table");grid.className="measurement-entry-table";const columns=tableTemplateColumns(table.type);
-  const thead=document.createElement("thead"),hr=document.createElement("tr");columns.forEach(col=>{const th=document.createElement("th");th.textContent=col[1];hr.appendChild(th);});thead.appendChild(hr);grid.appendChild(thead);
-  const body=document.createElement("tbody");
-  table.rows.forEach((row,rowIndex)=>{
-   const tr=document.createElement("tr");tr.className=row.kind==="deduction"?"deduction-row":"main-row";tr.dataset.row=String(rowIndex);tr.oncontextmenu=event=>{event.preventDefault();openTableRowMenu(table,rowIndex,event.clientX,event.clientY);};
-   columns.forEach(([key,label,kind],colIndex)=>{
-    const td=document.createElement("td");
-    if(kind==="result"){const value=rowIsEmpty(row)?0:tableSignedValue(table,rowIndex);td.className="result-cell "+(value<0?"minus":"plus");td.textContent=rowIsEmpty(row)?"":`${value>=0?"+":"−"} ${formatUnitValue(Math.abs(value))}`;}
-    else{const input=document.createElement("input");input.value=row[key]??"";input.dataset.key=key;input.dataset.row=String(rowIndex);input.dataset.col=String(colIndex);input.inputMode=kind==="number"?"decimal":"text";input.placeholder=row.kind==="deduction"&&key==="name"?"Tür / Fenster / Öffnung":"";
-     input.onchange=()=>{row[key]=input.value;if(rowIndex===table.rows.length-1&&!rowIsEmpty(row))table.rows.push(newMainTableRow(row.kind==="deduction"?table.type:(row.type||table.type)));renderMeasurementTables();autoSaveDigitalDraft();};
-     input.onkeydown=e=>handleTableKey(e,table,rowIndex,colIndex);td.appendChild(input);}
-    tr.appendChild(td);
-   });body.appendChild(tr);
-  });
-  grid.appendChild(body);wrap.appendChild(grid);
-  const footer=document.createElement("div");footer.className="measurement-table-total";footer.innerHTML=`<span>Tabellensumme</span><strong>${formatUnitValue(tableTotal(table))} ${escapeHtml(state.selectedPosition?.unit||"")}</strong>`;wrap.appendChild(footer);layer.appendChild(wrap);
+
+function tableDecimals(table,row,key){
+ // Requested convention: quantity/length/area etc. 2 decimals, volume 3.
+ const type=(row?.kind==="deduction" ? nearestMainRowType(table,row) : (row?.type||table.type));
+ return type==="volumen" ? 3 : 2;
+}
+function nearestMainRowType(table,row){
+ const index=table.rows.indexOf(row);
+ for(let i=index-1;i>=0;i--){
+  if(table.rows[i]?.kind!=="deduction")return table.rows[i].type||table.type;
+ }
+ return table.type;
+}
+function formatTableNumber(raw,table,row,key){
+ if(String(raw??"").trim()==="")return "";
+ const number=parseGermanNumber(raw);
+ if(!Number.isFinite(number))return String(raw??"");
+ return number.toLocaleString("de-DE",{
+  minimumFractionDigits:tableDecimals(table,row,key),
+  maximumFractionDigits:tableDecimals(table,row,key),
+  useGrouping:false
+ });
+}
+function nextRoomSuggestion(value){
+ const text=String(value||"").trim();
+ if(!text)return "";
+ // Only propose where the designation has a stable prefix plus trailing number,
+ // e.g. H-EG-001 -> H-EG-002. Pure numbers are also supported.
+ const match=text.match(/^(.*?)(\d+)$/);
+ if(!match)return "";
+ const prefix=match[1],digits=match[2];
+ if(!prefix && digits.length<1)return "";
+ const next=String(Number(digits)+1).padStart(digits.length,"0");
+ return prefix+next;
+}
+function ensureNextMainRow(table,rowIndex){
+ const row=table.rows[rowIndex];
+ if(!row || row.kind==="deduction")return;
+ let nextIndex=rowIndex+1;
+ while(nextIndex<table.rows.length && table.rows[nextIndex].kind==="deduction")nextIndex++;
+ if(nextIndex>=table.rows.length){
+  const next=newMainTableRow(row.type||table.type);
+  const suggestion=nextRoomSuggestion(row.room);
+  if(suggestion)next.room=suggestion;
+  table.rows.push(next);
+  return;
+ }
+ const next=table.rows[nextIndex];
+ if(next.kind!=="deduction" && rowIsEmpty(next)){
+  next.type=row.type||table.type;
+  if(!String(next.room||"").trim()){
+   const suggestion=nextRoomSuggestion(row.room);
+   if(suggestion)next.room=suggestion;
+  }
  }
 }
-function handleTableKey(event,table,rowIndex,colIndex){
- if(event.key!=="Tab"&&event.key!=="Enter")return;event.preventDefault();
- const inputs=[...$("digitalTableLayer").querySelectorAll(`[data-table-id="${table.id}"] input`)];let index=inputs.indexOf(event.target)+(event.shiftKey?-1:1);
- if(index>=inputs.length){const last=table.rows[table.rows.length-1];if(!rowIsEmpty(last))table.rows.push(newMainTableRow((table.rows.filter(r=>r.kind!=="deduction").at(-1)?.type)||table.type));renderMeasurementTables();const again=[...$("digitalTableLayer").querySelectorAll(`[data-table-id="${table.id}"] input`)];again[Math.min(index,again.length-1)]?.focus();return;}
- inputs[Math.max(0,index)]?.focus();inputs[Math.max(0,index)]?.select();
+function editableInputsForTable(table){
+ return [...$("digitalTableLayer").querySelectorAll(`[data-table-id="${table.id}"] input[data-key]`)];
+}
+function focusTableCell(table,rowIndex,key,select=true){
+ const input=$("digitalTableLayer").querySelector(
+  `[data-table-id="${table.id}"] tr[data-row="${rowIndex}"] input[data-key="${key}"]`
+ );
+ if(input){input.focus();if(select)input.select();return true}
+ return false;
+}
+function commitTableInput(input,table,row,rowIndex){
+ const key=input.dataset.key;
+ if(!key)return;
+ let value=input.value;
+ if(input.dataset.kind==="number"){
+  value=formatTableNumber(value,table,row,key);
+  input.value=value;
+ }
+ row[key]=value;
+ if(row.kind!=="deduction" && !rowIsEmpty(row))ensureNextMainRow(table,rowIndex);
+ autoSaveDigitalDraft();
+}
+function startTableDrag(event,table,wrap){
+ if(event.button!==0)return;
+ if(event.target.closest("input,button,select"))return;
+ event.preventDefault();
+ const startX=event.clientX,startY=event.clientY;
+ const baseX=Number(table.x||0),baseY=Number(table.y||0);
+ const move=e=>{
+  const scale=Math.max(.01,digitalState.zoom||1);
+  table.x=Math.max(0,baseX+(e.clientX-startX)/scale);
+  table.y=Math.max(0,baseY+(e.clientY-startY)/scale);
+  wrap.style.left=`${table.x}px`;
+  wrap.style.top=`${table.y}px`;
+ };
+ const up=()=>{
+  window.removeEventListener("pointermove",move);
+  window.removeEventListener("pointerup",up);
+  autoSaveDigitalDraft();
+ };
+ window.addEventListener("pointermove",move);
+ window.addEventListener("pointerup",up,{once:true});
+}
+
+function renderMeasurementTables(){
+ const layer=$("digitalTableLayer");if(!layer)return;
+ const active=document.activeElement;
+ const focusState=active?.closest?.(".measurement-table-object") ? {
+  tableId:active.closest(".measurement-table-object")?.dataset.tableId,
+  row:Number(active.dataset.row),
+  key:active.dataset.key,
+  start:active.selectionStart,
+  end:active.selectionEnd
+ } : null;
+
+ layer.innerHTML="";
+ for(const table of digitalState.tables||[]){
+  const wrap=document.createElement("div");
+  wrap.className="measurement-table-object";
+  wrap.dataset.tableId=table.id;
+  wrap.style.left=`${table.x}px`;
+  wrap.style.top=`${table.y}px`;
+  wrap.style.width=`${table.width}px`;
+
+  const head=document.createElement("div");
+  head.className="measurement-table-title measurement-table-drag-handle";
+  head.title="Tabelle mit der Maus verschieben";
+  head.innerHTML=`<strong>☰ ${escapeHtml(({wand:"Wandflächen",boden:"Bodenflächen",decke:"Deckenflächen",laenge:"Längen",volumen:"Volumen",stueck:"Stück"})[table.type]||"Aufmaßtabelle")}</strong><span>Ziehen = verschieben · Tab = nächste Zelle · Rechtsklick = Zeilenoptionen</span>`;
+  head.addEventListener("pointerdown",event=>startTableDrag(event,table,wrap));
+  wrap.appendChild(head);
+
+  const grid=document.createElement("table");
+  grid.className="measurement-entry-table";
+  const columns=tableTemplateColumns(table.type);
+
+  const thead=document.createElement("thead"),hr=document.createElement("tr");
+  columns.forEach(col=>{const th=document.createElement("th");th.textContent=col[1];hr.appendChild(th);});
+  thead.appendChild(hr);grid.appendChild(thead);
+
+  const body=document.createElement("tbody");
+  table.rows.forEach((row,rowIndex)=>{
+   const tr=document.createElement("tr");
+   tr.className=row.kind==="deduction"?"deduction-row":"main-row";
+   tr.dataset.row=String(rowIndex);
+   tr.oncontextmenu=event=>{event.preventDefault();openTableRowMenu(table,rowIndex,event.clientX,event.clientY);};
+
+   columns.forEach(([key,label,kind],colIndex)=>{
+    const td=document.createElement("td");
+    if(kind==="result"){
+     const value=rowIsEmpty(row)?0:tableSignedValue(table,rowIndex);
+     td.className="result-cell "+(value<0?"minus":"plus");
+     td.textContent=rowIsEmpty(row)?"":`${value>=0?"+":"−"} ${formatUnitValue(Math.abs(value))}`;
+    }else{
+     const input=document.createElement("input");
+     input.value=row[key]??"";
+     input.dataset.key=key;
+     input.dataset.kind=kind;
+     input.dataset.row=String(rowIndex);
+     input.dataset.col=String(colIndex);
+     input.inputMode=kind==="number"?"decimal":"text";
+     input.placeholder=row.kind==="deduction"&&key==="name"?"Tür / Fenster / Öffnung":"";
+
+     input.addEventListener("input",()=>{row[key]=input.value;});
+     input.addEventListener("blur",()=>{
+      commitTableInput(input,table,row,rowIndex);
+      renderMeasurementTables();
+     });
+     input.addEventListener("keydown",event=>handleTableKey(event,table,rowIndex,key));
+     td.appendChild(input);
+    }
+    tr.appendChild(td);
+   });
+   body.appendChild(tr);
+  });
+  grid.appendChild(body);wrap.appendChild(grid);
+
+  const footer=document.createElement("div");
+  footer.className="measurement-table-total";
+  footer.innerHTML=`<span>Tabellensumme</span><strong>${formatUnitValue(tableTotal(table))} ${escapeHtml(state.selectedPosition?.unit||"")}</strong>`;
+  wrap.appendChild(footer);
+  layer.appendChild(wrap);
+ }
+
+ if(focusState?.tableId){
+  const input=$("digitalTableLayer").querySelector(
+   `[data-table-id="${focusState.tableId}"] tr[data-row="${focusState.row}"] input[data-key="${focusState.key}"]`
+  );
+  if(input){
+   input.focus();
+   try{input.setSelectionRange(focusState.start??0,focusState.end??0)}catch(e){}
+  }
+ }
+}
+function handleTableKey(event,table,rowIndex,key){
+ if(event.key!=="Tab" && event.key!=="Enter")return;
+ event.preventDefault();
+
+ const current=event.target;
+ const row=table.rows[rowIndex];
+ commitTableInput(current,table,row,rowIndex);
+
+ // Build navigation from the actual editable cells after ensuring the next row.
+ renderMeasurementTables();
+ const inputs=editableInputsForTable(table);
+ const selector=`[data-table-id="${table.id}"] tr[data-row="${rowIndex}"] input[data-key="${key}"]`;
+ const refreshed=$("digitalTableLayer").querySelector(selector);
+ let index=inputs.indexOf(refreshed);
+
+ if(event.key==="Enter"){
+  // Enter jumps vertically to same logical field in next main row.
+  let nextRow=rowIndex+1;
+  while(nextRow<table.rows.length && table.rows[nextRow].kind==="deduction")nextRow++;
+  if(nextRow>=table.rows.length){
+   ensureNextMainRow(table,rowIndex);
+   renderMeasurementTables();
+   nextRow=table.rows.length-1;
+  }
+  if(!focusTableCell(table,nextRow,key)){
+   const nextInputs=editableInputsForTable(table);
+   const fallback=nextInputs[Math.min(Math.max(0,index+1),nextInputs.length-1)];
+   fallback?.focus();fallback?.select();
+  }
+  return;
+ }
+
+ // Tab / Shift+Tab traverses all editable cells. At the last cell the new row
+ // has already been created, so Tab continues seamlessly into it.
+ const refreshedInputs=editableInputsForTable(table);
+ index=refreshedInputs.indexOf(
+  $("digitalTableLayer").querySelector(selector)
+ );
+ let target=index+(event.shiftKey?-1:1);
+ target=Math.max(0,Math.min(target,refreshedInputs.length-1));
+ refreshedInputs[target]?.focus();
+ refreshedInputs[target]?.select();
 }
 function openTableRowMenu(table,rowIndex,x,y){const menu=$("tableRowMenu");menu.dataset.tableId=table.id;menu.dataset.row=String(rowIndex);menu.style.left=`${Math.min(x,window.innerWidth-240)}px`;menu.style.top=`${Math.min(y,window.innerHeight-260)}px`;menu.classList.remove("hidden");}
 function closeTableRowMenu(){$("tableRowMenu")?.classList.add("hidden");}
@@ -1099,12 +1329,12 @@ async function openDigitalMeasurement(){
  requestAnimationFrame(()=>requestAnimationFrame(()=>{
   resizeDrawingCanvas();
   bindDrawingCanvas();
-  resetDigitalView();
+  fitDigitalViewForEditing();
   loadDigitalDraft(); renderCalculationList(); renderMeasurementTables(); refreshSumFields();
 
   // Nach Fonts/CSS/Scrollbars noch einmal an die tatsächlich verfügbare
   // Desktop-Fläche anpassen.
-  setTimeout(()=>resetDigitalView(),120);
+  setTimeout(()=>fitDigitalViewForEditing(),120);
  }));
 }
 function updateDigitalId(){
