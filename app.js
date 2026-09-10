@@ -504,15 +504,31 @@ function setDigitalZoom(next,anchorX=null,anchorY=null){
 function resetDigitalView(){
  const viewport=$("digitalViewport"),sheet=$("digitalSheetViewport");if(!viewport||!sheet)return;
  const desktop=window.matchMedia("(min-width: 901px)").matches;
- const rect=sheet.getBoundingClientRect();
- const sheetWidth=(sheet.scrollWidth||sheet.offsetWidth||900);
- const sheetHeight=(sheet.scrollHeight||sheet.offsetHeight||1120);
- const pad=desktop?24:16;
- const fit=Math.min((viewport.clientWidth-pad*2)/sheetWidth,(viewport.clientHeight-pad*2)/sheetHeight);
- digitalState.zoom=clamp(fit,0.30,desktop?0.95:0.90);
- digitalState.panX=Math.max(12,(viewport.clientWidth-sheetWidth*digitalState.zoom)/2);
- digitalState.panY=Math.max(12,(viewport.clientHeight-sheetHeight*digitalState.zoom)/2);
+
+ // Die untransformierte Blattgröße verwenden. getBoundingClientRect() wäre hier
+ // ungeeignet, weil darin ein alter Zoom bereits enthalten sein kann.
+ const sheetWidth=Math.max(900,sheet.offsetWidth||0,sheet.scrollWidth||0);
+ const paper=sheet.querySelector(".measurement-paper");
+ const sheetHeight=Math.max(
+  1120,
+  sheet.offsetHeight||0,
+  sheet.scrollHeight||0,
+  paper?.offsetHeight||0,
+  paper?.scrollHeight||0
+ );
+
+ const vw=Math.max(1,viewport.clientWidth);
+ const vh=Math.max(1,viewport.clientHeight);
+ const pad=desktop?28:16;
+ const fitX=(vw-pad*2)/sheetWidth;
+ const fitY=(vh-pad*2)/sheetHeight;
+ const fit=Math.min(fitX,fitY);
+
+ digitalState.zoom=clamp(fit,desktop?0.42:0.30,desktop?1.10:0.90);
+ digitalState.panX=(vw-sheetWidth*digitalState.zoom)/2;
+ digitalState.panY=Math.max(14,(vh-sheetHeight*digitalState.zoom)/2);
  updateZoomUi();
+ resizeDrawingCanvas();
 }
 function setDigitalPanMode(active){
  digitalState.panMode=Boolean(active);
@@ -520,7 +536,7 @@ function setDigitalPanMode(active){
  if($("digitalViewport"))$("digitalViewport").classList.toggle("pan-mode",digitalState.panMode);
  if(digitalState.panMode){
   digitalState.tool="pan";
-  ["digitalPen","digitalEraser","digitalText","digitalFormula"].forEach(id=>$(id)?.classList.remove("active-tool"));
+  ["digitalPen","digitalEraser","digitalText","digitalFormula","digitalTable"].forEach(id=>$(id)?.classList.remove("active-tool"));
  }
 }
 function screenToCanvasPoint(event){
@@ -548,15 +564,48 @@ function formatUnitValue(value,unit=state.selectedPosition?.unit||""){
  return n.toLocaleString("de-DE",{minimumFractionDigits:decimalsForUnit(unit),maximumFractionDigits:decimalsForUnit(unit)});
 }
 function currentTransfer(sheetNo=Number($("digitalSheetNumber")?.value||0)){
- return (state.selectedPosition?.measurement_sheets||[])
-  .filter(sheet=>Number(sheet.sheet_no)<Number(sheetNo))
-  .reduce((sum,sheet)=>sum+Number(sheet.measured_quantity||0),0);
+ const target=Number(sheetNo||0);
+ const sheets=Array.isArray(state.selectedPosition?.measurement_sheets)
+  ? state.selectedPosition.measurement_sheets
+  : [];
+
+ // Grundstein des Übertrags ist ausschließlich die Aufmaßblatt-Tabelle
+ // der aktuell gewählten Position. Dadurch zählen auch vollständig
+ // handschriftliche Blätter, sobald deren Blattmenge am Desktop
+ // in dieser Tabelle nachgetragen wurde.
+ return sheets
+  .filter(sheet=>{
+   const no=Number(sheet?.sheet_no||0);
+   return no>0 && no<target;
+  })
+  .reduce((sum,sheet)=>sum+Number(sheet?.measured_quantity||0),0);
 }
 function refreshSumFields(){
- const transfer=currentTransfer();
- if($("digitalTransferValue"))$("digitalTransferValue").textContent=formatUnitValue(transfer);
+ const sheetNo=Number($("digitalSheetNumber")?.value||0);
+ const transfer=currentTransfer(sheetNo);
+
+ if($("digitalTransferValue")){
+  $("digitalTransferValue").textContent=formatUnitValue(transfer);
+  $("digitalTransferValue").title="Automatisch aus allen vorherigen Blattmengen der Aufmaßblatt-Tabelle";
+ }
+
+ const existing=(state.selectedPosition?.measurement_sheets||[])
+  .find(sheet=>Number(sheet.sheet_no)===sheetNo);
+ const existingQty=existing ? Number(existing.measured_quantity||0) : null;
+
+ // Bestehende Blattmenge nur als Ausgangswert übernehmen.
+ // Das Feld bleibt – wie besprochen – manuell beschreibbar.
+ if($("digitalSheetSumInput") && $("digitalSheetSumInput").value===""){
+  if(existing && Number.isFinite(existingQty)){
+   $("digitalSheetSumInput").value=formatUnitValue(existingQty);
+   digitalState.manualSheetSum=$("digitalSheetSumInput").value;
+  }
+ }
+
  const sheet=parseGermanNumber($("digitalSheetSumInput")?.value||0);
- if($("digitalTotalInput") && $("digitalTotalInput").value==="")$("digitalTotalInput").placeholder=formatUnitValue(transfer+sheet);
+ if($("digitalTotalInput") && $("digitalTotalInput").value===""){
+  $("digitalTotalInput").placeholder=formatUnitValue(transfer+sheet);
+ }
 }
 function syncManualSumDraft(){
  digitalState.manualSheetSum=$("digitalSheetSumInput")?.value||"";
@@ -988,8 +1037,36 @@ function closeMobileEditorPanels(){
  document.querySelectorAll(".mobile-editor-dock button[data-panel]").forEach(b=>b.classList.remove("active"));
 }
 
-function openDigitalMeasurement(){
+
+async function refreshCurrentProjectPositionFromCloud(){
+ if(!state.selectedProject || !state.selectedPosition)return;
+ try{
+  const projectId=state.selectedProject.id;
+  const projectNumber=state.selectedProject.project_number;
+  const positionId=state.selectedPosition.id;
+  const positionOrdinal=state.selectedPosition.ordinal;
+
+  const data=await findProjectIndex();
+  state.projects=data.projects||state.projects||[];
+
+  const freshProject=(state.projects||[]).find(project=>Number(project.id)===Number(projectId))
+   || (state.projects||[]).find(project=>String(project.project_number)===String(projectNumber));
+
+  if(!freshProject)return;
+
+  const freshPosition=(freshProject.positions||[]).find(position=>Number(position.id)===Number(positionId))
+   || (freshProject.positions||[]).find(position=>String(position.ordinal)===String(positionOrdinal));
+
+  state.selectedProject=freshProject;
+  if(freshPosition)state.selectedPosition=freshPosition;
+ }catch(error){
+  console.warn("Aktuelle Aufmaßblatt-Tabelle konnte nicht neu geladen werden:",error);
+ }
+}
+
+async function openDigitalMeasurement(){
  closeUploadPanel();
+ await refreshCurrentProjectPositionFromCloud();
  closeMobileEditorPanels();
  renderDigitalSheetNumbers();
  $("digitalDate").value=new Date().toISOString().slice(0,10);
@@ -1017,6 +1094,10 @@ function openDigitalMeasurement(){
   bindDrawingCanvas();
   resetDigitalView();
   loadDigitalDraft(); renderCalculationList(); renderMeasurementTables(); refreshSumFields();
+
+  // Nach Fonts/CSS/Scrollbars noch einmal an die tatsächlich verfügbare
+  // Desktop-Fläche anpassen.
+  setTimeout(()=>resetDigitalView(),120);
  }));
 }
 function updateDigitalId(){

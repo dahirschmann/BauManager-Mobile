@@ -330,3 +330,63 @@ code{background:#edf1f4;border-radius:4px;padding:2px 5px}
 /* v3.1.1 Login-Fix */
 .account-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
 .login-hint{font-size:12px;color:var(--muted);margin-top:10px}
+
+/* v3.1.2 Desktop-Viewport-Fix
+   Der globale main-Container war nur 900 px breit und hat den Editor zusammengedrückt.
+   Der digitale Editor wird auf Desktop aus diesem Limit herausgezogen. */
+@media (min-width:901px){
+  #digitalMeasurementView{
+    width:calc(100vw - 36px)!important;
+    max-width:none!important;
+    margin-left:calc(50% - 50vw + 18px)!important;
+    margin-right:0!important;
+    box-sizing:border-box!important;
+  }
+
+  #digitalMeasurementView .universal-editor-layout{
+    display:grid!important;
+    grid-template-columns:250px minmax(0,1fr)!important;
+    width:100%!important;
+    max-width:none!important;
+    gap:14px!important;
+  }
+
+  #digitalMeasurementView .digital-sheet-workspace{
+    width:100%!important;
+    min-width:0!important;
+    max-width:none!important;
+    margin:0!important;
+    padding:0!important;
+    box-sizing:border-box!important;
+    overflow:hidden!important;
+  }
+
+  #digitalMeasurementView .digital-viewport{
+    width:100%!important;
+    min-width:0!important;
+    height:calc(100vh - 150px)!important;
+    min-height:700px!important;
+    margin:0!important;
+    padding:0!important;
+    box-sizing:border-box!important;
+    overflow:hidden!important;
+  }
+
+  #digitalMeasurementView .digital-sheet-viewport{
+    position:absolute!important;
+    left:0!important;
+    top:0!important;
+    width:900px!important;
+    min-width:900px!important;
+    max-width:900px!important;
+    transform-origin:0 0!important;
+  }
+
+  #digitalMeasurementView .digital-sheet-viewport .measurement-paper{
+    width:900px!important;
+    min-width:900px!important;
+    max-width:900px!important;
+    margin:0!important;
+    box-sizing:border-box!important;
+  }
+}
