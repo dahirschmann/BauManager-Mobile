@@ -18,15 +18,64 @@ function initials(name){return String(name||"BM").split(/\s+/).slice(0,2).map(x=
 
 async function initialize(){
  if(!isConfigured()){showView("setupView");return}
- msalInstance=new msal.PublicClientApplication({auth:{clientId:config.clientId,authority:config.authority,redirectUri:config.redirectUri},cache:{cacheLocation:"localStorage",storeAuthStateInCookie:true}});
+ if(typeof msal==="undefined" || !msal.PublicClientApplication){
+  showView("loginView");
+  throw new Error("Die Microsoft-Anmeldebibliothek konnte nicht geladen werden. Bitte die Seite mit Strg+F5 neu laden.");
+ }
+ msalInstance=new msal.PublicClientApplication({
+  auth:{clientId:config.clientId,authority:config.authority,redirectUri:config.redirectUri},
+  cache:{cacheLocation:"localStorage",storeAuthStateInCookie:true}
+ });
  await msalInstance.initialize();
  const redirect=await msalInstance.handleRedirectPromise();
  if(redirect?.account)msalInstance.setActiveAccount(redirect.account);
  state.account=msalInstance.getActiveAccount()||msalInstance.getAllAccounts()[0]||null;
- if(state.account){msalInstance.setActiveAccount(state.account);await enterApp()}else showView("loginView");
+ if(state.account){
+  msalInstance.setActiveAccount(state.account);
+  await enterApp();
+ }else{
+  showView("loginView");
+ }
 }
-async function login(){try{setStatus($("loginStatus"),"Microsoft-Anmeldung wird geöffnet …");await msalInstance.loginRedirect({scopes:config.graphScopes})}catch(e){setStatus($("loginStatus"),`Anmeldung fehlgeschlagen: ${e.message}`,true)}}
-function logout(){msalInstance.logoutRedirect({account:state.account,postLogoutRedirectUri:config.redirectUri})}
+async function login(){
+ try{
+  setStatus($("loginStatus"),"Microsoft-Kontoauswahl wird geöffnet …");
+  if(!msalInstance) await initialize();
+  await msalInstance.loginRedirect({
+   scopes:config.graphScopes,
+   prompt:"select_account"
+  });
+ }catch(e){
+  setStatus($("loginStatus"),`Anmeldung fehlgeschlagen: ${e.message}`,true);
+ }
+}
+async function switchAccount(){
+ try{
+  if(!msalInstance) await initialize();
+  setStatus($("accountStatus"),"Microsoft-Kontoauswahl wird geöffnet …");
+  await msalInstance.loginRedirect({
+   scopes:config.graphScopes,
+   prompt:"select_account"
+  });
+ }catch(e){
+  setStatus($("accountStatus"),`Kontowechsel fehlgeschlagen: ${e.message}`,true);
+ }
+}
+async function logout(){
+ try{
+  if(!msalInstance){
+   state.account=null;
+   showView("loginView");
+   return;
+  }
+  await msalInstance.logoutRedirect({
+   account:state.account||msalInstance.getActiveAccount(),
+   postLogoutRedirectUri:config.redirectUri
+  });
+ }catch(e){
+  setStatus($("accountStatus"),`Abmelden fehlgeschlagen: ${e.message}`,true);
+ }
+}
 async function getToken(){const req={scopes:config.graphScopes,account:state.account};try{return(await msalInstance.acquireTokenSilent(req)).accessToken}catch{await msalInstance.acquireTokenRedirect(req);throw new Error("Anmeldung wird erneuert.")}}
 async function graphFetch(url,options={}){const token=await getToken();const response=await fetch(url,{...options,headers:{Authorization:`Bearer ${token}`,...(options.headers||{})}});if(!response.ok){const body=await response.text();throw new Error(`${response.status}: ${body||response.statusText}`)}return response}
 function graphPath(path){const safe=path.split("/").filter(Boolean).map(encodeURIComponent).join("/");return `${GRAPH}/me/drive/root:/${safe}`}
@@ -1323,7 +1372,28 @@ async function saveDigitalToCloud(){
   const pdf=await digitalPdfBlob(),sheetSumRaw=$("digitalSheetSumInput")?.value||"",measured=sheetSumRaw!==""?parseGermanNumber(sheetSumRaw):null;
   await uploadDigitalSheetPackage(currentSheet,pdf,draftObject(),measured);autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${digitalExternalIdForSheet(currentSheet)} erfolgreich übertragen.`,false,true);
  }catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}
-};$("digitalPen").onclick=()=>activateDigitalTool("pen");$("digitalEraser").onclick=()=>activateDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;
+};$("loginButton").onclick=login;
+$("logoutButton").onclick=logout;
+$("switchAccountButton").onclick=switchAccount;
+$("refreshButton").onclick=loadProjects;
+$("homeButton").onclick=()=>state.account&&showView("dashboardView");
+$("accountButton").onclick=()=>{
+ state.previousView=views.find(v=>!$(v).classList.contains("hidden"))||"dashboardView";
+ showView("accountView");
+};
+$("backFromAccount").onclick=()=>showView(state.previousView);
+$("backToProjects").onclick=()=>showView("dashboardView");
+$("backToPositions").onclick=()=>showView("positionView");
+$("backFromDigital").onclick=()=>showView("positionDetailView");
+$("digitalMeasurementButton").onclick=openDigitalMeasurement;
+$("digitalSheetNumber").onchange=()=>{updateDigitalId();refreshSumFields();};
+$("digitalDate").onchange=()=>{
+ autoSaveDigitalDraft();
+ const value=$("digitalDate").value||"";
+ const parts=value.split("-");
+ $("digitalDateDisplay").textContent=parts.length===3?`${parts[2]}.${parts[1]}.${parts[0]}`:value;
+};
+$("digitalPen").onclick=()=>activateDigitalTool("pen");$("digitalEraser").onclick=()=>activateDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;
 $("digitalColor").onchange=()=>digitalState.strokeColor=$("digitalColor").value;
 $("digitalText").onclick=()=>activateDigitalTool("text");
 $("digitalFormula").onclick=()=>activateDigitalTool("formula");

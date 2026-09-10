@@ -36,6 +36,7 @@
       <h1>BauManager Mobil</h1>
       <p>Baustellenunterlagen direkt dem richtigen Projekt und der richtigen Position zuordnen.</p>
       <button id="loginButton" class="primary large">Mit Microsoft anmelden</button>
+      <p class="login-hint">Bei der Anmeldung wird die Microsoft-Kontoauswahl geöffnet.</p>
       <p id="loginStatus" class="status"></p>
     </section>
 
@@ -300,7 +301,11 @@
         <span class="eyebrow">Microsoft-Konto</span>
         <h1 id="accountName">Benutzerkonto</h1>
         <p id="accountEmail"></p>
-        <button id="logoutButton" class="danger-button">Abmelden</button>
+        <div class="account-actions">
+          <button id="switchAccountButton" class="outline large">Microsoft-Konto wechseln</button>
+          <button id="logoutButton" class="danger-button">Abmelden</button>
+        </div>
+        <p id="accountStatus" class="status"></p>
       </div>
     </section>
   </main>
@@ -373,6 +378,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=3.1"></script>
+  <script src="app.js?v=3.1.1"></script>
 </body>
 </html>
