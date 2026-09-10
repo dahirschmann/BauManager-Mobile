@@ -384,7 +384,7 @@ async function uploadOne(file){
  const uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
  const project=state.selectedProject,position=state.selectedPosition,category=state.category;let blob=file,name=sanitizeFilename(file.name),sheetNo=null,externalId=null;
  if(category==="aufmass"){sheetNo=Number($("sheetNumber").value);externalId=currentExternalId();if(file.type.startsWith("image/")){blob=await imageToPdf(file);name=`${externalId}.pdf`}else if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf"))name=`${externalId}.pdf`;else throw new Error("Für Aufmaße sind Bilder oder PDF-Dateien zulässig.")}
- const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v3.0"};
+ const metadata={version:2,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:project.id,project_number:project.project_number,project_name:project.name,position_id:position.id,position_ordinal:position.ordinal,position_short_text:position.short_text,category,original_filename:file.name,stored_filename:name,sheet_no:sheetNo,external_id:externalId,client_source:"BauManager Mobile v3.1"};
  await uploadFile(`${base}/${name}`,blob);await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}))
 }
 async function ensureFolderPath(path){
@@ -415,7 +415,7 @@ function humanSize(b){if(b<1024)return`${b} B`;if(b<1048576)return`${(b/1024).to
 function escapeHtml(v){const d=document.createElement("div");d.textContent=String(v||"");return d.innerHTML}
 
 // Digitales Aufmaß – Grundgerüst
-const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",texts:[],calculations:[],formulaPoint:null,lineWidth:2.4,background:"#ffffff",strokeColor:"#17212b",bound:false,zoom:1,panX:0,panY:0,panMode:false,pointers:new Map(),pinchStart:null};
+const digitalState={strokes:[],redo:[],drawing:false,current:null,tool:"pen",texts:[],calculations:[],tables:[],formulaPoint:null,manualSheetSum:"",manualTotal:"",lineWidth:2.4,background:"#ffffff",strokeColor:"#17212b",bound:false,zoom:1,panX:0,panY:0,panMode:false,pointers:new Map(),pinchStart:null};
 function digitalDraftKey(){return `digital-measurement:${digitalExternalId()}`;}
 
 function clamp(value,min,max){return Math.max(min,Math.min(max,value));}
@@ -488,6 +488,113 @@ function updatePinch(){
  setDigitalZoom(digitalState.pinchStart.zoom*(d/digitalState.pinchStart.distance),cx,cy);updateZoomUi();
 }
 
+
+
+function decimalsForUnit(unit){
+ const value=String(unit||"").toLowerCase().replace(/\s/g,"");
+ return value.includes("m³")||value.includes("m3") ? 3 : 2;
+}
+function formatUnitValue(value,unit=state.selectedPosition?.unit||""){
+ const n=Number(value||0);
+ return n.toLocaleString("de-DE",{minimumFractionDigits:decimalsForUnit(unit),maximumFractionDigits:decimalsForUnit(unit)});
+}
+function currentTransfer(sheetNo=Number($("digitalSheetNumber")?.value||0)){
+ return (state.selectedPosition?.measurement_sheets||[])
+  .filter(sheet=>Number(sheet.sheet_no)<Number(sheetNo))
+  .reduce((sum,sheet)=>sum+Number(sheet.measured_quantity||0),0);
+}
+function refreshSumFields(){
+ const transfer=currentTransfer();
+ if($("digitalTransferValue"))$("digitalTransferValue").textContent=formatUnitValue(transfer);
+ const sheet=parseGermanNumber($("digitalSheetSumInput")?.value||0);
+ if($("digitalTotalInput") && $("digitalTotalInput").value==="")$("digitalTotalInput").placeholder=formatUnitValue(transfer+sheet);
+}
+function syncManualSumDraft(){
+ digitalState.manualSheetSum=$("digitalSheetSumInput")?.value||"";
+ digitalState.manualTotal=$("digitalTotalInput")?.value||"";
+ autoSaveDigitalDraft(); refreshSumFields();
+}
+function tableTemplateColumns(type){
+ const map={
+  wand:[["room","Raum","text"],["name","Wand / Bezeichnung","text"],["a","L","number"],["b","H","number"],["count","Anzahl","number"],["value","Wert","result"]],
+  boden:[["room","Raum","text"],["name","Boden / Bezeichnung","text"],["a","L","number"],["b","B","number"],["count","Anzahl","number"],["value","Wert","result"]],
+  decke:[["room","Raum","text"],["name","Decke / Bezeichnung","text"],["a","L","number"],["b","B","number"],["count","Anzahl","number"],["value","Wert","result"]],
+  laenge:[["room","Bereich","text"],["name","Bezeichnung","text"],["a","L","number"],["count","Anzahl","number"],["value","Wert","result"]],
+  volumen:[["room","Bereich","text"],["name","Bezeichnung","text"],["a","L","number"],["b","B","number"],["c","H","number"],["count","Anzahl","number"],["value","Wert","result"]],
+  stueck:[["room","Bereich","text"],["name","Bezeichnung","text"],["count","Anzahl","number"],["value","Wert","result"]]
+ }; return map[type]||map.wand;
+}
+function mainRowValue(row){
+ const a=parseGermanNumber(row.a),b=parseGermanNumber(row.b),c=parseGermanNumber(row.c),count=parseGermanNumber(row.count||1)||1;
+ if(row.type==="laenge")return a*count;if(row.type==="volumen")return a*b*c*count;if(row.type==="stueck")return parseGermanNumber(row.count);return a*b*count;
+}
+function deductionValue(row,parentType){
+ const a=parseGermanNumber(row.a),b=parseGermanNumber(row.b),c=parseGermanNumber(row.c),count=parseGermanNumber(row.count||1)||1;
+ if(parentType==="laenge")return -(a*count);if(parentType==="volumen")return -(a*b*c*count);if(parentType==="stueck")return -parseGermanNumber(row.count);return -(a*b*count);
+}
+function rowIsEmpty(row){return !["room","name","a","b","c","count"].some(key=>String(row[key]??"").trim()!=="") || (String(row.name||"")==="" && String(row.room||"")==="" && !parseGermanNumber(row.a) && !parseGermanNumber(row.b) && !parseGermanNumber(row.c));}
+function tableSignedValue(table,index){
+ const row=table.rows[index];
+ if(row.kind==="deduction"){let parentType=table.type;for(let i=index-1;i>=0;i--){if(table.rows[i].kind!=="deduction"){parentType=table.rows[i].type||table.type;break;}}return deductionValue(row,parentType);}
+ return mainRowValue(row);
+}
+function tableTotal(table){return table.rows.reduce((sum,row,index)=>sum+(rowIsEmpty(row)?0:tableSignedValue(table,index)),0);}
+function newMainTableRow(type){return {kind:"main",type,room:"",name:"",a:"",b:"",c:"",count:"1"};}
+function newDeductionRow(){return {kind:"deduction",name:"Abzug",a:"",b:"",c:"",count:"1"};}
+function createMeasurementTableAt(x,y,type){
+ digitalState.tables.push({id:`tbl-${Date.now()}`,x,y,width:760,type,rows:[newMainTableRow(type),newMainTableRow(type)]});
+ renderMeasurementTables(); autoSaveDigitalDraft();
+}
+function openTableTemplateAt(x,y){
+ if(!window.matchMedia("(min-width: 901px)").matches){alert("Die Aufmaßtabelle ist für die Desktop-/Laptop-Ansicht vorgesehen.");return;}
+ digitalState.tablePoint={x,y};$("tableTemplateModal").classList.remove("hidden");
+}
+function closeTableTemplateModal(){$("tableTemplateModal").classList.add("hidden");digitalState.tablePoint=null;}
+function insertSelectedTable(){if(!digitalState.tablePoint)return;createMeasurementTableAt(digitalState.tablePoint.x,digitalState.tablePoint.y,$("tableTemplateType").value);closeTableTemplateModal();}
+function renderMeasurementTables(){
+ const layer=$("digitalTableLayer");if(!layer)return;layer.innerHTML="";
+ for(const table of digitalState.tables||[]){
+  const wrap=document.createElement("div");wrap.className="measurement-table-object";wrap.dataset.tableId=table.id;wrap.style.left=`${table.x}px`;wrap.style.top=`${table.y}px`;wrap.style.width=`${table.width}px`;
+  const head=document.createElement("div");head.className="measurement-table-title";head.innerHTML=`<strong>${escapeHtml(({wand:"Wandflächen",boden:"Bodenflächen",decke:"Deckenflächen",laenge:"Längen",volumen:"Volumen",stueck:"Stück"})[table.type]||"Aufmaßtabelle")}</strong><span>Tab = nächste Zelle · Rechtsklick = Zeilenoptionen</span>`;wrap.appendChild(head);
+  const grid=document.createElement("table");grid.className="measurement-entry-table";const columns=tableTemplateColumns(table.type);
+  const thead=document.createElement("thead"),hr=document.createElement("tr");columns.forEach(col=>{const th=document.createElement("th");th.textContent=col[1];hr.appendChild(th);});thead.appendChild(hr);grid.appendChild(thead);
+  const body=document.createElement("tbody");
+  table.rows.forEach((row,rowIndex)=>{
+   const tr=document.createElement("tr");tr.className=row.kind==="deduction"?"deduction-row":"main-row";tr.dataset.row=String(rowIndex);tr.oncontextmenu=event=>{event.preventDefault();openTableRowMenu(table,rowIndex,event.clientX,event.clientY);};
+   columns.forEach(([key,label,kind],colIndex)=>{
+    const td=document.createElement("td");
+    if(kind==="result"){const value=rowIsEmpty(row)?0:tableSignedValue(table,rowIndex);td.className="result-cell "+(value<0?"minus":"plus");td.textContent=rowIsEmpty(row)?"":`${value>=0?"+":"−"} ${formatUnitValue(Math.abs(value))}`;}
+    else{const input=document.createElement("input");input.value=row[key]??"";input.dataset.key=key;input.dataset.row=String(rowIndex);input.dataset.col=String(colIndex);input.inputMode=kind==="number"?"decimal":"text";input.placeholder=row.kind==="deduction"&&key==="name"?"Tür / Fenster / Öffnung":"";
+     input.onchange=()=>{row[key]=input.value;if(rowIndex===table.rows.length-1&&!rowIsEmpty(row))table.rows.push(newMainTableRow(row.kind==="deduction"?table.type:(row.type||table.type)));renderMeasurementTables();autoSaveDigitalDraft();};
+     input.onkeydown=e=>handleTableKey(e,table,rowIndex,colIndex);td.appendChild(input);}
+    tr.appendChild(td);
+   });body.appendChild(tr);
+  });
+  grid.appendChild(body);wrap.appendChild(grid);
+  const footer=document.createElement("div");footer.className="measurement-table-total";footer.innerHTML=`<span>Tabellensumme</span><strong>${formatUnitValue(tableTotal(table))} ${escapeHtml(state.selectedPosition?.unit||"")}</strong>`;wrap.appendChild(footer);layer.appendChild(wrap);
+ }
+}
+function handleTableKey(event,table,rowIndex,colIndex){
+ if(event.key!=="Tab"&&event.key!=="Enter")return;event.preventDefault();
+ const inputs=[...$("digitalTableLayer").querySelectorAll(`[data-table-id="${table.id}"] input`)];let index=inputs.indexOf(event.target)+(event.shiftKey?-1:1);
+ if(index>=inputs.length){const last=table.rows[table.rows.length-1];if(!rowIsEmpty(last))table.rows.push(newMainTableRow((table.rows.filter(r=>r.kind!=="deduction").at(-1)?.type)||table.type));renderMeasurementTables();const again=[...$("digitalTableLayer").querySelectorAll(`[data-table-id="${table.id}"] input`)];again[Math.min(index,again.length-1)]?.focus();return;}
+ inputs[Math.max(0,index)]?.focus();inputs[Math.max(0,index)]?.select();
+}
+function openTableRowMenu(table,rowIndex,x,y){const menu=$("tableRowMenu");menu.dataset.tableId=table.id;menu.dataset.row=String(rowIndex);menu.style.left=`${Math.min(x,window.innerWidth-240)}px`;menu.style.top=`${Math.min(y,window.innerHeight-260)}px`;menu.classList.remove("hidden");}
+function closeTableRowMenu(){$("tableRowMenu")?.classList.add("hidden");}
+function selectedTableRow(){const menu=$("tableRowMenu"),table=(digitalState.tables||[]).find(t=>t.id===menu.dataset.tableId);return {table,rowIndex:Number(menu.dataset.row)};}
+function addDeductionToSelectedRow(){const {table,rowIndex}=selectedTableRow();if(!table)return;let main=rowIndex;while(main>=0&&table.rows[main]?.kind==="deduction")main--;if(main<0)return;let insert=main+1;while(insert<table.rows.length&&table.rows[insert].kind==="deduction")insert++;table.rows.splice(insert,0,newDeductionRow());closeTableRowMenu();renderMeasurementTables();autoSaveDigitalDraft();}
+function duplicateSelectedTableRow(){const {table,rowIndex}=selectedTableRow();if(!table)return;table.rows.splice(rowIndex+1,0,JSON.parse(JSON.stringify(table.rows[rowIndex])));closeTableRowMenu();renderMeasurementTables();autoSaveDigitalDraft();}
+function deleteSelectedTableRow(){const {table,rowIndex}=selectedTableRow();if(!table)return;if(table.rows.length>1)table.rows.splice(rowIndex,1);closeTableRowMenu();renderMeasurementTables();autoSaveDigitalDraft();}
+function changeSelectedTableRowType(){const {table,rowIndex}=selectedTableRow();if(!table)return;const row=table.rows[rowIndex];if(row.kind==="deduction"){alert("Abzugszeilen übernehmen den Rechentyp der Hauptzeile.");return;}const type=prompt("Zeilentyp: wand, boden, decke, laenge, volumen, stueck",row.type||table.type);if(!["wand","boden","decke","laenge","volumen","stueck"].includes(type))return;row.type=type;closeTableRowMenu();renderMeasurementTables();autoSaveDigitalDraft();}
+function tableRenderableRows(table){return table.rows.filter(row=>!rowIsEmpty(row));}
+function splitTableRows(table,startY){
+ const rowH=29,headerH=50,footerH=34,bottomReserve=120,maxY=720-bottomReserve;
+ const firstCapacity=Math.max(1,Math.floor((maxY-startY-headerH-footerH)/rowH)),continuationCapacity=Math.max(1,Math.floor((maxY-55-headerH-footerH)/rowH));
+ const rows=tableRenderableRows(table),pages=[];let index=0,capacity=firstCapacity;
+ while(index<rows.length){pages.push(rows.slice(index,index+capacity));index+=capacity;capacity=continuationCapacity;}return pages.length?pages:[[]];
+}
+function tablePageSum(table,rows){return rows.reduce((sum,row)=>{const i=table.rows.indexOf(row);return sum+(i>=0?tableSignedValue(table,i):0);},0);}
 
 function openFormulaModalAt(x,y){
  digitalState.formulaPoint={x,y};
@@ -750,6 +857,12 @@ function bindDrawingCanvas(){
    openFormulaModalAt(point.x,point.y);
    return;
   }
+  if(digitalState.tool==="table"){
+   e.preventDefault();
+   const point=canvasPoint(e);
+   openTableTemplateAt(point.x,point.y);
+   return;
+  }
   e.preventDefault();
   canvas.setPointerCapture(e.pointerId);
   digitalState.drawing=true; digitalState.redo=[];
@@ -812,6 +925,7 @@ function renderDigitalSheetNumbers(){
  option.selected=true;
  select.appendChild(option);
 }
+function digitalExternalIdForSheet(sheetNo){return `${state.selectedProject.project_number}-${compactOrdinal(state.selectedPosition.ordinal)}-${String(Number(sheetNo)).padStart(3,"0")}`;}
 function digitalExternalId(){const n=Number($("digitalSheetNumber").value||0);return `${state.selectedProject.project_number}-${compactOrdinal(state.selectedPosition.ordinal)}-${String(n).padStart(3,"0")}`;}
 
 function toggleMobileEditorPanel(name){
@@ -853,7 +967,7 @@ function openDigitalMeasurement(){
   resizeDrawingCanvas();
   bindDrawingCanvas();
   resetDigitalView();
-  loadDigitalDraft(); renderCalculationList();
+  loadDigitalDraft(); renderCalculationList(); renderMeasurementTables(); refreshSumFields();
  }));
 }
 function updateDigitalId(){
@@ -886,19 +1000,19 @@ function updateDigitalId(){
  }
  loadDigitalDraft();
 }
-function draftObject(){return {version:1,id:digitalExternalId(),date:$("digitalDate").value,project:state.selectedProject,position:state.selectedPosition,strokes:digitalState.strokes,texts:digitalState.texts,calculations:digitalState.calculations,updated_at:new Date().toISOString(),status:"Entwurf"};}
+function draftObject(){return {version:1,id:digitalExternalId(),date:$("digitalDate").value,project:state.selectedProject,position:state.selectedPosition,strokes:digitalState.strokes,texts:digitalState.texts,calculations:digitalState.calculations,tables:digitalState.tables,manualSheetSum:digitalState.manualSheetSum,manualTotal:digitalState.manualTotal,updated_at:new Date().toISOString(),status:"Entwurf"};}
 function autoSaveDigitalDraft(){localStorage.setItem(digitalDraftKey(),JSON.stringify(draftObject()));$("digitalStatus").textContent="Entwurf lokal gespeichert";}
 function loadDigitalDraft(){
  try{
   const raw=localStorage.getItem(digitalDraftKey());
   const draft=raw?JSON.parse(raw):null;
-  digitalState.strokes=draft?.strokes||[]; digitalState.texts=draft?.texts||[]; digitalState.calculations=draft?.calculations||[]; renderCalculationList();
+  digitalState.strokes=draft?.strokes||[]; digitalState.texts=draft?.texts||[]; digitalState.calculations=draft?.calculations||[]; digitalState.tables=draft?.tables||[]; digitalState.manualSheetSum=draft?.manualSheetSum||""; digitalState.manualTotal=draft?.manualTotal||""; renderCalculationList(); renderMeasurementTables(); if($("digitalSheetSumInput"))$("digitalSheetSumInput").value=digitalState.manualSheetSum; if($("digitalTotalInput"))$("digitalTotalInput").value=digitalState.manualTotal; refreshSumFields();
   if(draft?.date)$("digitalDate").value=draft.date;
   $("digitalStatus").textContent=draft
    ? `Lokaler Entwurf geladen · ${new Date(draft.updated_at||Date.now()).toLocaleString("de-DE")}`
    : "Neues digitales Aufmaßblatt";
  }catch{
-  digitalState.strokes=[];
+  digitalState.strokes=[]; digitalState.texts=[]; digitalState.tables=[]; digitalState.manualSheetSum=""; digitalState.manualTotal="";
   $("digitalStatus").textContent="Neues digitales Aufmaßblatt";
  }
  digitalState.redo=[];
@@ -1001,13 +1115,31 @@ function pdfDrawSumBox(page,font,bold,x,y,width,height,rows){
    end:{x:x+width-pdfMm(12),y:writeY},
    thickness:.45
   });
+  if(row.value!==undefined && row.value!==null && String(row.value)!==""){
+   pdfDrawRight(page,bold,String(row.value),x+width-pdfMm(14),writeY-pdfMm(1),8);
+  }
   pdfDrawRight(page,font,row.unit||"",x+width-pdfMm(2.5),writeY-pdfMm(1),7.5);
  });
 }
 function digitalProjectAddress(value){
  return String(value||"").replace(/\r/g,"").split("\n").map(line=>line.trim()).filter(Boolean).join("\n");
 }
-async function digitalPdfBlob(){
+
+function pdfDrawTable(page,font,bold,table,rows,gridLeft,gridBottom,gridHeight,startY){
+ const unit=state.selectedPosition?.unit||"",x=gridLeft+pdfMm(4),maxWidth=pdfMm(135),rowH=pdfMm(6.5),headerH=pdfMm(7);
+ const cols=tableTemplateColumns(table.type),weights=cols.map(col=>col[2]==="result"?1.15:(col[0]==="name"?1.8:(col[0]==="room"?1.1:.8))),totalWeight=weights.reduce((a,b)=>a+b,0),widths=weights.map(w=>maxWidth*w/totalWeight);
+ let y=gridBottom+gridHeight-pdfMm(7)-startY*(pdfMm(1)/3.78);
+ page.drawRectangle({x,y:y-headerH,width:maxWidth,height:headerH,borderWidth:.55,borderColor:PDFLib.rgb(.15,.18,.2),color:PDFLib.rgb(.94,.96,.97)});
+ let cx=x;cols.forEach((col,i)=>{page.drawText(col[1],{x:cx+2,y:y-headerH+5,size:6.5,font:bold});if(i>0)page.drawLine({start:{x:cx,y:y-headerH},end:{x:cx,y},thickness:.35});cx+=widths[i];});y-=headerH;
+ rows.forEach(row=>{
+  page.drawRectangle({x,y:y-rowH,width:maxWidth,height:rowH,borderWidth:.35,borderColor:PDFLib.rgb(.35,.4,.44),color:row.kind==="deduction"?PDFLib.rgb(.98,.98,.98):PDFLib.rgb(1,1,1)});
+  cx=x;const oi=table.rows.indexOf(row),signed=oi>=0?tableSignedValue(table,oi):0;
+  cols.forEach((col,i)=>{const key=col[0];let value=key==="value"?`${signed>=0?"+":"-"} ${formatUnitValue(Math.abs(signed),unit)}`:String(row[key]??"");const indent=row.kind==="deduction"&&i===0?pdfMm(3):0;if(value)page.drawText(value,{x:cx+2+indent,y:y-rowH+5,size:6.5,font:row.kind==="deduction"&&key==="name"?bold:font});if(i>0)page.drawLine({start:{x:cx,y:y-rowH},end:{x:cx,y},thickness:.3});cx+=widths[i];});y-=rowH;
+ });
+ const total=tablePageSum(table,rows);page.drawRectangle({x,y:y-rowH,width:maxWidth,height:rowH,borderWidth:.55,borderColor:PDFLib.rgb(.15,.18,.2),color:PDFLib.rgb(.94,.96,.97)});page.drawText("Tabellensumme",{x:x+3,y:y-rowH+5,size:6.8,font:bold});pdfDrawRight(page,bold,`${formatUnitValue(total,unit)} ${unit}`,x+maxWidth-3,y-rowH+5,7);return total;
+}
+
+async function digitalPdfBlob(options={}){
  const pdf=await PDFLib.PDFDocument.create();
  const page=pdf.addPage([595.28,841.89]);
  const font=await pdf.embedFont(PDFLib.StandardFonts.Helvetica);
@@ -1016,8 +1148,8 @@ async function digitalPdfBlob(){
  const pageHeight=page.getHeight();
  const margin=pdfMm(12);
  const contentWidth=pageWidth-2*margin;
- const id=digitalExternalId();
- const sheetNo=Number($("digitalSheetNumber").value||0);
+ const sheetNo=Number(options.sheetNo ?? ($("digitalSheetNumber").value||0));
+ const id=digitalExternalIdForSheet(sheetNo);
  const project=state.selectedProject||{};
  const position=state.selectedPosition||{};
  const unit=position.unit||"";
@@ -1106,18 +1238,22 @@ async function digitalPdfBlob(){
   drawX=margin+(contentWidth-drawWidth)/2;
  }
  page.drawImage(drawing,{x:drawX,y:drawY,width:drawWidth,height:drawHeight});
+ if(options.table && options.tableRows){
+  pdfDrawTable(page,font,bold,options.table,options.tableRows,margin,gridBottom,gridHeight,options.tableStartY ?? options.table.y ?? 60);
+ }
 
  const sumW=pdfMm(56);
  const upperH=pdfMm(14);
  const lowerH=pdfMm(27);
  const inset=pdfMm(3);
  const previousLabel=sheetNo>1?`Übertrag Summe Blatt ${String(sheetNo-1).padStart(3,"0")}`:"Übertrag Summe";
- pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridTop-upperH-inset,sumW,upperH,[
-  {label:previousLabel,unit}
- ]);
+ const transferValue=options.transferValue!==undefined?formatUnitValue(options.transferValue,unit):formatUnitValue(currentTransfer(sheetNo),unit);
+ const manualSheet=options.sheetSum!==undefined?options.sheetSum:($("digitalSheetSumInput")?.value||"");
+ const manualTotal=options.total!==undefined?options.total:($("digitalTotalInput")?.value||"");
+ pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridTop-upperH-inset,sumW,upperH,[{label:previousLabel,unit,value:transferValue}]);
  pdfDrawSumBox(page,font,bold,pageWidth-margin-sumW-inset,gridBottom+inset,sumW,lowerH,[
-  {label:`Summe Blatt ${String(sheetNo).padStart(3,"0")}`,unit},
-  {label:"Gesamtsumme",unit}
+  {label:`Summe Blatt ${String(sheetNo).padStart(3,"0")}`,unit,value:manualSheet!==""?formatUnitValue(manualSheet,unit):""},
+  {label:"Gesamtsumme",unit,value:manualTotal!==""?formatUnitValue(manualTotal,unit):""}
  ]);
 
  const signatureY=pdfMm(17);
@@ -1150,21 +1286,58 @@ async function digitalPdfBlob(){
 
  return new Blob([await pdf.save()],{type:"application/pdf"});
 }
-async function saveDigitalToCloud(){const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");try{if(!state.cloudBaseFolder)await findProjectIndex();const id=digitalExternalId(),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);const pdf=await digitalPdfBlob(),preview=await digitalPreviewBlob(),draft=draftObject();const jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);const metadata={version:3,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number($("digitalSheetNumber").value),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,client_source:"BauManager Mobile v3.0"};await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${id} erfolgreich übertragen.`,false,true);const current=state.selectedPosition.measurement_sheets||[];if(!current.some(item=>Number(item.sheet_no)===Number($("digitalSheetNumber").value))){current.push({sheet_no:Number($("digitalSheetNumber").value),status:"übertragen"});state.selectedPosition.measurement_sheets=current;}}catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}}
-
-$("loginButton").onclick=login;$("logoutButton").onclick=logout;$("refreshButton").onclick=loadProjects;
-$("homeButton").onclick=()=>state.account&&showView("dashboardView");
-$("accountButton").onclick=()=>{state.previousView=views.find(v=>!$(v).classList.contains("hidden"))||"dashboardView";showView("accountView")};
-$("backFromAccount").onclick=()=>showView(state.previousView);
-$("backToProjects").onclick=()=>showView("dashboardView");$("backToPositions").onclick=()=>showView("positionView");$("backFromDigital").onclick=()=>showView("positionDetailView");$("digitalMeasurementButton").onclick=openDigitalMeasurement;$("digitalSheetNumber").onchange=updateDigitalId;$("digitalDate").onchange=()=>{
- autoSaveDigitalDraft();
- const value=$("digitalDate").value||"";
- const parts=value.split("-");
- $("digitalDateDisplay").textContent=parts.length===3?`${parts[2]}.${parts[1]}.${parts[0]}`:value;
+async function uploadDirectSheetAttachment(file){
+ if(!file)return;if(!state.cloudBaseFolder)await findProjectIndex();
+ const sheetNo=Number($("digitalSheetNumber").value||0),id=digitalExternalIdForSheet(sheetNo),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;
+ await ensureFolderPath(base);const stored=`${Date.now()}_${String(file.name||"Anhang").replace(/[^\w.\-]+/g,"_")}`;await uploadFile(`${base}/${stored}`,file);
+ const metadata={version:4,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"blattanhang",document_type:"sonstige",original_filename:file.name,stored_filename:stored,sheet_no:sheetNo,external_id:id,client_source:"BauManager Mobile v3.1"};
+ await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));setStatus($("digitalStatus"),`Anhang wurde für ${id} hochgeladen.`,false,true);
+}
+async function uploadDigitalSheetPackage(sheetNo,pdf,draft,measuredQuantity=null){
+ const id=digitalExternalIdForSheet(sheetNo),uploadId=createUploadId(),base=`${state.cloudBaseFolder}/uploads/${uploadId}`;await ensureFolderPath(base);
+ const preview=await digitalPreviewBlob(),jsonBlob=new Blob([JSON.stringify(draft,null,2)],{type:"application/json"});
+ await uploadFile(`${base}/${id}.pdf`,pdf);await uploadFile(`${base}/${id}.json`,jsonBlob);await uploadFile(`${base}/${id}.preview.png`,preview);
+ const metadata={version:4,upload_id:uploadId,uploaded_at:new Date().toISOString(),project_id:state.selectedProject.id,project_number:state.selectedProject.project_number,project_name:state.selectedProject.name,position_id:state.selectedPosition.id,position_ordinal:state.selectedPosition.ordinal,position_short_text:state.selectedPosition.short_text,category:"aufmass",original_filename:`${id}.json`,stored_filename:`${id}.pdf`,sheet_no:Number(sheetNo),external_id:id,digital_draft_filename:`${id}.json`,preview_filename:`${id}.preview.png`,measured_quantity:measuredQuantity,client_source:"BauManager Mobile v3.1"};
+ await uploadFile(`${base}/metadata.json`,new Blob([JSON.stringify(metadata,null,2)],{type:"application/json"}));
+ const sheets=state.selectedPosition.measurement_sheets||[],existing=sheets.find(s=>Number(s.sheet_no)===Number(sheetNo));
+ if(existing){if(measuredQuantity!==null)existing.measured_quantity=measuredQuantity;existing.status="übertragen";}else sheets.push({sheet_no:Number(sheetNo),measured_quantity:Number(measuredQuantity||0),status:"übertragen"});
+ state.selectedPosition.measurement_sheets=sheets;
+}
+async function saveDigitalToCloud(){
+ const btn=$("digitalCloudSave");btn.disabled=true;setStatus($("digitalStatus"),"Digitales Aufmaß wird übertragen …");
+ try{
+  if(!state.cloudBaseFolder)await findProjectIndex();const currentSheet=Number($("digitalSheetNumber").value||0),table=(digitalState.tables||[])[0];
+  if(table){
+   const chunks=splitTableRows(table,table.y||60);
+   if(chunks.length>1){
+    let transfer=currentTransfer(currentSheet);
+    for(let i=0;i<chunks.length;i++){
+     const sheetNo=currentSheet+i,pageSum=tablePageSum(table,chunks[i]),total=transfer+pageSum;
+     const pdf=await digitalPdfBlob({sheetNo,table,tableRows:chunks[i],tableStartY:i===0?(table.y||60):55,transferValue:transfer,sheetSum:pageSum,total});
+     const draft={...draftObject(),id:digitalExternalIdForSheet(sheetNo),tablePage:i+1,tablePages:chunks.length,tableRows:chunks[i],automaticTotals:true};
+     await uploadDigitalSheetPackage(sheetNo,pdf,draft,pageSum);transfer=total;
+    }
+    autoSaveDigitalDraft();setStatus($("digitalStatus"),`${chunks.length} Aufmaßblätter automatisch erzeugt und übertragen. Überträge und Summen wurden fortgeführt.`,false,true);return;
+   }
+  }
+  const pdf=await digitalPdfBlob(),sheetSumRaw=$("digitalSheetSumInput")?.value||"",measured=sheetSumRaw!==""?parseGermanNumber(sheetSumRaw):null;
+  await uploadDigitalSheetPackage(currentSheet,pdf,draftObject(),measured);autoSaveDigitalDraft();setStatus($("digitalStatus"),`Aufmaßblatt ${digitalExternalIdForSheet(currentSheet)} erfolgreich übertragen.`,false,true);
+ }catch(e){setStatus($("digitalStatus"),e.message,true);}finally{btn.disabled=false;}
 };$("digitalPen").onclick=()=>activateDigitalTool("pen");$("digitalEraser").onclick=()=>activateDigitalTool("eraser");$("digitalUndo").onclick=()=>{const s=digitalState.strokes.pop();if(s)digitalState.redo.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalRedo").onclick=()=>{const s=digitalState.redo.pop();if(s)digitalState.strokes.push(s);redrawDigitalCanvas();autoSaveDigitalDraft()};$("digitalClear").onclick=()=>{if(confirm("Skizze wirklich löschen?")){digitalState.strokes=[];digitalState.redo=[];redrawDigitalCanvas();autoSaveDigitalDraft()}};$("digitalLineWidth").oninput=updateDigitalWidth;
 $("digitalColor").onchange=()=>digitalState.strokeColor=$("digitalColor").value;
 $("digitalText").onclick=()=>activateDigitalTool("text");
 $("digitalFormula").onclick=()=>activateDigitalTool("formula");
+$("digitalTable").onclick=()=>activateDigitalTool("table");
+$("tableTemplateCancel").onclick=closeTableTemplateModal;
+$("tableTemplateInsert").onclick=insertSelectedTable;
+$("tableRowAddDeduction").onclick=addDeductionToSelectedRow;
+$("tableRowDuplicate").onclick=duplicateSelectedTableRow;
+$("tableRowType").onclick=changeSelectedTableRowType;
+$("tableRowDelete").onclick=deleteSelectedTableRow;
+document.addEventListener("click",e=>{if($("tableRowMenu")&&!$("tableRowMenu").contains(e.target))closeTableRowMenu();});
+$("digitalSheetSumInput").oninput=syncManualSumDraft;
+$("digitalTotalInput").oninput=syncManualSumDraft;
+$("digitalAttachmentInput").onchange=async e=>{const file=e.target.files?.[0];e.target.value="";if(file){try{await uploadDirectSheetAttachment(file)}catch(err){setStatus($("digitalStatus"),err.message,true);}}};
 $("formulaType").onchange=updateFormulaFields;
 $("formulaCancel").onclick=closeFormulaModal;
 $("formulaInsert").onclick=insertFormulaFromModal;

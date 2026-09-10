@@ -9,7 +9,7 @@
   <title>BauManager Mobil</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="styles.css?v=3.0">
+  <link rel="stylesheet" href="styles.css?v=3.1">
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@4.25.0/lib/msal-browser.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
   <script src="config.js?v=2.3"></script>
@@ -175,7 +175,7 @@
     <button id="digitalPen" class="outline">✎ Stift</button>
     <button id="digitalEraser" class="outline">⌫ Radierer</button>
     <button id="digitalText" class="outline">T Text</button>
-    <button id="digitalFormula" class="outline">ƒ Formel</button>
+    <button id="digitalFormula" class="outline">ƒ Formel</button><button id="digitalTable" class="outline desktop-only-table">▦ Aufmaßtabelle</button>
     <label class="line-width-control">Linienstärke<input id="digitalLineWidth" type="range" min="1" max="8" step="0.5" value="2.5"><span id="digitalLineWidthValue">2,5 mm</span></label>
     <label class="color-control">Farbe <input id="digitalColor" type="color" value="#17212b"></label>
     <label class="text-size-control">Textgröße <select id="digitalTextSize"><option>12</option><option selected>16</option><option>20</option><option>24</option></select></label>
@@ -191,7 +191,7 @@
   <div class="tool-group"><h3>Berechnung</h3><p>Formel wählen und Stelle im Blatt anklicken.</p></div>
   <div class="tool-group"><h3>Aktionen</h3>
     <button id="digitalLocalSave" class="outline large">Entwurf speichern</button>
-    <button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button>
+    <button id="digitalCloudSave" class="primary large">PDF erzeugen und übertragen</button><button class="outline large" onclick="document.getElementById('digitalAttachmentInput').click()">＋ Anhang zu diesem Blatt</button><input id="digitalAttachmentInput" type="file" accept="image/*,application/pdf" class="hidden">
     <div id="digitalStatus" class="status"></div>
   </div>
 </aside>
@@ -245,19 +245,19 @@
         <div class="paper-heading">Aufmaß / Skizze / Berechnung</div>
 
         <div class="drawing-area">
-          <canvas id="drawingCanvas"></canvas>
+          <canvas id="drawingCanvas"></canvas><div id="digitalTableLayer" class="digital-table-layer"></div>
           <div class="sum-box sum-box-top">
             <b id="digitalPreviousSum">Übertrag Summe</b>
-            <div class="sum-line"><span></span><em id="digitalTopUnit"></em></div>
+            <div class="sum-line"><strong id="digitalTransferValue" class="sum-value locked"></strong><em id="digitalTopUnit"></em></div>
           </div>
           <div class="sum-box sum-box-bottom">
             <div>
-              <b id="digitalSheetSum">Summe Blatt</b><strong id="digitalCalculatedSum" class="calculated-sum"></strong>
-              <div class="sum-line"><span></span><em id="digitalBottomUnit1"></em></div>
+              <b id="digitalSheetSum">Summe Blatt</b>
+              <div class="sum-line"><input id="digitalSheetSumInput" class="sheet-sum-input" inputmode="decimal" placeholder="0,00"><em id="digitalBottomUnit1"></em></div>
             </div>
             <div class="sum-divider">
               <b>Gesamtsumme</b>
-              <div class="sum-line"><span></span><em id="digitalBottomUnit2"></em></div>
+              <div class="sum-line"><input id="digitalTotalInput" class="sheet-sum-input" inputmode="decimal" placeholder="0,00"><em id="digitalBottomUnit2"></em></div>
             </div>
           </div>
         </div>
@@ -290,7 +290,7 @@
     <div class="mobile-tool-grid"><button class="outline" onclick="digitalZoomOut.click()">−</button><button class="outline" onclick="digitalZoomIn.click()">＋</button><button class="outline" onclick="digitalZoomReset.click()">Ganzes Blatt</button></div><p>Zwei Finger: zoomen und verschieben.</p>
   </div>
   <div class="mobile-tool-panel panel-calc"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Berechnung</h3><button class="primary" onclick="digitalFormula.click();closeMobileEditorPanels()">ƒ Formel ins Blatt</button><p>Danach die gewünschte Stelle antippen.</p></div>
-  <div class="mobile-tool-panel panel-actions"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Speichern</h3><button id="mobileDraftSave" class="outline large">Entwurf speichern</button><button id="mobilePdfUpload" class="primary large">PDF erzeugen und hochladen</button></div>
+  <div class="mobile-tool-panel panel-actions"><button class="mobile-panel-close" data-close-mobile-panel="1">×</button><h3>Speichern</h3><button id="mobileDraftSave" class="outline large">Entwurf speichern</button><button id="mobilePdfUpload" class="primary large">PDF erzeugen und hochladen</button><button class="outline large" onclick="document.getElementById('digitalAttachmentInput').click()">＋ Anhang zu diesem Blatt</button></div>
 </div>
 </section>
 
@@ -305,7 +305,18 @@
     </section>
   </main>
 
-  <div id="formulaModal" class="formula-modal hidden">
+  
+<div id="tableTemplateModal" class="formula-modal hidden">
+ <div class="formula-modal-backdrop"></div><div class="formula-dialog">
+  <div class="panel-header"><div><span class="eyebrow">Desktop-Aufmaß</span><h2>Aufmaßtabelle einfügen</h2></div></div>
+  <label>Vorlage<select id="tableTemplateType"><option value="wand">Wandflächen</option><option value="boden">Bodenflächen</option><option value="decke">Deckenflächen</option><option value="laenge">Längen</option><option value="volumen">Volumen</option><option value="stueck">Stück</option></select></label>
+  <p class="muted-note">Abzüge werden per Rechtsklick direkt unter einer Hauptzeile eingefügt und eingerückt dargestellt.</p>
+  <div class="dialog-actions"><button id="tableTemplateCancel" class="outline">Abbrechen</button><button id="tableTemplateInsert" class="primary">Tabelle einfügen</button></div>
+ </div>
+</div>
+<div id="tableRowMenu" class="table-row-menu hidden"><button id="tableRowAddDeduction">↳ Abzug hinzufügen</button><button id="tableRowDuplicate">Zeile duplizieren</button><button id="tableRowType">Zeilentyp ändern</button><button id="tableRowDelete">Zeile löschen</button></div>
+
+<div id="formulaModal" class="formula-modal hidden">
     <div id="formulaModalBackdrop" class="formula-modal-backdrop"></div>
     <div class="formula-dialog">
       <div class="panel-header">
@@ -362,6 +373,6 @@
     </button>
   </template>
 
-  <script src="app.js?v=3.0"></script>
+  <script src="app.js?v=3.1"></script>
 </body>
 </html>
